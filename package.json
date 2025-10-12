@@ -9,7 +9,11 @@
     "./quaternion": "./src/ui/adaptive/renderers/ShaderQuaternionSynchronizer.js",
     "./sensors": "./src/ui/adaptive/SensoryInputBridge.js",
     "./polychora": "./src/core/PolychoraSystem.js",
-    "./geometry": "./src/geometry/GeometryLibrary.js"
+    "./geometry": "./src/geometry/GeometryLibrary.js",
+    "./core/quaternion": {
+      "types": "./src/core/quaternion/index.ts",
+      "default": "./src/core/quaternion/index.ts"
+    }
   },
   "keywords": [
     "quaternion",
@@ -36,11 +40,30 @@
     "url": "https://github.com/Domusgpt/vib34d-xr-quaternion-sdk.git"
   },
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=18.19.0"
   },
+  "scripts": {
+    "dev:web": "vite --open",
+    "build:web": "vite build",
+    "lint": "eslint \"src/**/*.{js,ts}\"",
+    "test": "vitest run",
+    "bench": "vitest bench",
+    "analyze:bundle": "vite build --mode analyze"
+  },
+  "packageManager": "pnpm@9.4.0",
   "files": [
     "src/",
     "DOCS/",
     "README.md"
-  ]
+  ],
+  "dependencies": {
+    "ajv": "^8.17.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.9",
+    "eslint": "^9.6.0",
+    "typescript": "^5.5.3",
+    "vite": "^5.3.3",
+    "vitest": "^1.6.0"
+  }
 }
