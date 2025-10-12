@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/core/AdaptiveSDK.js",
     "./quaternion": "./src/ui/adaptive/renderers/ShaderQuaternionSynchronizer.js",
+    "./core/quaternion": "./src/core/quaternion/index.js",
     "./sensors": "./src/ui/adaptive/SensoryInputBridge.js",
     "./polychora": "./src/core/PolychoraSystem.js",
     "./geometry": "./src/geometry/GeometryLibrary.js"
@@ -42,5 +43,8 @@
     "src/",
     "DOCS/",
     "README.md"
-  ]
+  ],
+  "scripts": {
+    "test": "node --test tests/quaternion.test.js"
+  }
 }
