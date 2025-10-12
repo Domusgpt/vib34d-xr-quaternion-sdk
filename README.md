@@ -96,6 +96,17 @@ vib34d-xr-quaternion-sdk/
     └── ... (17 comprehensive docs)
 ```
 
+## 🛠 Development Environment
+
+```bash
+corepack enable
+pnpm install
+pnpm dev:web      # Vite quaternion preview workbench
+pnpm storybook    # Storybook quaternion preview states
+```
+
+Node.js 18.19+ is required (`.nvmrc` pins the recommended runtime) and pnpm enforces engine compatibility via `.npmrc`.
+
 ## 🚀 Key Integration Points
 
 ### XR Quaternion Pipeline
@@ -136,6 +147,7 @@ See `DOCS/` directory for complete technical documentation:
 - `1-TECHNICAL-OVERVIEW.md` - System architecture
 - `3-DEVELOPER-GUIDE.md` - API reference and code examples
 - `SDK_BOUNDARY_PROPOSAL.md` - SDK scope and module boundaries
+- `WEBGPU_MIGRATION_ARCHITECTURE.md` - Multipass WebGPU pipeline and quaternion compute strategy
 
 **Platform Compatibility:**
 - `wearables-platform-comparison.md` - OpenXR, WebXR, platform-specific details
