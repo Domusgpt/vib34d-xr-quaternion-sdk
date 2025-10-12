@@ -163,7 +163,7 @@ export class QuantumEngine {
     updateParameter(param, value) {
         // Update internal parameter manager
         this.parameters.setParameter(param, value);
-        
+
         // CRITICAL: Apply to all quantum visualizers with immediate render
         this.visualizers.forEach(visualizer => {
             if (visualizer.updateParameters) {
@@ -180,10 +180,46 @@ export class QuantumEngine {
                 }
             }
         });
-        
+
         console.log(`🔮 Updated quantum ${param}: ${value}`);
     }
-    
+
+    /**
+     * Apply multiple parameter updates atomically across visualizers.
+     */
+    batchUpdate(params = {}, context = {}) {
+        if (!params || typeof params !== 'object') {
+            return;
+        }
+
+        if (typeof this.parameters?.setParameters === 'function') {
+            this.parameters.setParameters(params);
+        } else {
+            Object.entries(params).forEach(([param, value]) => {
+                if (typeof this.parameters?.setParameter === 'function') {
+                    this.parameters.setParameter(param, value);
+                } else {
+                    this.parameters[param] = value;
+                }
+            });
+        }
+
+        this.visualizers.forEach(visualizer => {
+            if (typeof visualizer.updateParameters === 'function') {
+                visualizer.updateParameters(params, context);
+            } else if (visualizer.params) {
+                Object.entries(params).forEach(([param, value]) => {
+                    visualizer.params[param] = value;
+                });
+                if (typeof visualizer.render === 'function') {
+                    visualizer.render();
+                }
+            }
+        });
+
+        console.log('🔮 Quantum batchUpdate applied', params);
+    }
+
     /**
      * Update multiple parameters
      */
@@ -191,6 +227,13 @@ export class QuantumEngine {
         Object.keys(params).forEach(param => {
             this.updateParameter(param, params[param]);
         });
+    }
+
+    getParameter(param) {
+        if (typeof this.parameters?.getParameter === 'function') {
+            return this.parameters.getParameter(param);
+        }
+        return undefined;
     }
     
     /**

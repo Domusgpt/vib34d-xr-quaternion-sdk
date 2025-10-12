@@ -154,9 +154,9 @@ export class RealHolographicSystem {
             this.customParams = {};
         }
         this.customParams[param] = value;
-        
+
         console.log(`🌌 Updating holographic ${param}: ${value} (${this.visualizers.length} visualizers)`);
-        
+
         // CRITICAL FIX: Call updateParameters method on ALL visualizers for immediate render
         this.visualizers.forEach((visualizer, index) => {
             try {
@@ -171,12 +171,12 @@ export class RealHolographicSystem {
                     // Fallback for older method (direct parameter setting)
                     if (visualizer.variantParams) {
                         visualizer.variantParams[param] = value;
-                        
+
                         // If it's a geometry type change, regenerate role params with new geometry
                         if (param === 'geometryType') {
                             visualizer.roleParams = visualizer.generateRoleParams(visualizer.role);
                         }
-                        
+
                         // Force manual render for older visualizers
                         if (visualizer.render) {
                             visualizer.render();
@@ -187,15 +187,63 @@ export class RealHolographicSystem {
                 console.error(`❌ Failed to update holographic layer ${index}:`, error);
             }
         });
-        
+
         console.log(`🔄 Holographic parameter update complete: ${param}=${value}`);
     }
-    
+
+    batchUpdate(params = {}, context = {}) {
+        if (!params || typeof params !== 'object') {
+            return;
+        }
+
+        if (!this.customParams) {
+            this.customParams = {};
+        }
+        Object.assign(this.customParams, params);
+
+        this.visualizers.forEach((visualizer, index) => {
+            try {
+                if (typeof visualizer.updateParameters === 'function') {
+                    visualizer.updateParameters(params, context);
+                } else if (visualizer.variantParams) {
+                    Object.entries(params).forEach(([param, value]) => {
+                        visualizer.variantParams[param] = value;
+                        if (param === 'geometryType') {
+                            visualizer.roleParams = visualizer.generateRoleParams(visualizer.role);
+                        }
+                    });
+                    if (typeof visualizer.render === 'function') {
+                        visualizer.render();
+                    }
+                }
+            } catch (error) {
+                console.error(`❌ Failed to batch update holographic layer ${index}:`, error);
+            }
+        });
+
+        this.updateParameterDisplay();
+        console.log('🔄 Holographic batch update complete', params);
+    }
+
+    getParameter(param) {
+        if (this.customParams && Object.prototype.hasOwnProperty.call(this.customParams, param)) {
+            return this.customParams[param];
+        }
+        const primary = this.visualizers?.[0];
+        if (primary?.variantParams && Object.prototype.hasOwnProperty.call(primary.variantParams, param)) {
+            return primary.variantParams[param];
+        }
+        if (primary?.params && Object.prototype.hasOwnProperty.call(primary.params, param)) {
+            return primary.params[param];
+        }
+        return undefined;
+    }
+
     // Override updateVariant to preserve custom parameters
     updateVariant(newVariant) {
         if (newVariant < 0) newVariant = this.totalVariants - 1;
         if (newVariant >= this.totalVariants) newVariant = 0;
-        
+
         this.currentVariant = newVariant;
         
         // Update all visualizers with new variant parameters
