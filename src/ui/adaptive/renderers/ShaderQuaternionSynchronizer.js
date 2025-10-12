@@ -8,6 +8,13 @@
  * visual systems react coherently to wearable localization data.
  */
 
+import {
+    conjugateQuaternion,
+    multiplyQuaternions,
+    normalizeQuaternionObject,
+    quaternionToEuler
+} from '../../../core/quaternion/index.js';
+
 const ROTATION_LIMIT = 6.28; // ±2π rad slider range
 const DEG_PER_RAD = 180 / Math.PI;
 
@@ -23,8 +30,6 @@ const PARAM_LIMITS = {
 };
 
 const CHANNELS = ['spatial.anchors', 'spatial.hit-tests', 'spatial.pose'];
-
-const identityQuaternion = () => ({ x: 0, y: 0, z: 0, w: 1 });
 
 export class ShaderQuaternionSynchronizer {
     constructor(options = {}) {
@@ -170,15 +175,11 @@ export class ShaderQuaternionSynchronizer {
     }
 
     applyOrientation(quaternion, context = {}) {
-        const normalized = this.normalizeQuaternion(quaternion);
+        const normalized = normalizeQuaternionObject(quaternion);
         const timestamp = typeof context.timestamp === 'number' ? context.timestamp : this.lastTimestamp || 0;
         const confidence = this.normalizeConfidence(context.confidence);
 
-        if (!normalized) {
-            return;
-        }
-
-        const euler = this.quaternionToEuler(normalized);
+        const euler = quaternionToEuler(normalized);
         const rotationTarget = {
             rot4dXW: this.clampNumber(euler.pitch * this.rotationScale, PARAM_LIMITS.rot4dXW),
             rot4dYW: this.clampNumber(euler.yaw * this.rotationScale, PARAM_LIMITS.rot4dYW),
@@ -270,45 +271,6 @@ export class ShaderQuaternionSynchronizer {
         return map.get(param);
     }
 
-    normalizeQuaternion(quaternion) {
-        if (!quaternion || typeof quaternion !== 'object') {
-            return identityQuaternion();
-        }
-        const x = Number(quaternion.x) || 0;
-        const y = Number(quaternion.y) || 0;
-        const z = Number(quaternion.z) || 0;
-        const w = Number(quaternion.w);
-        const wValue = Number.isFinite(w) ? w : Math.sqrt(Math.max(0, 1 - (x * x + y * y + z * z)));
-        const length = Math.hypot(x, y, z, wValue);
-        if (length === 0) {
-            return identityQuaternion();
-        }
-        return {
-            x: x / length,
-            y: y / length,
-            z: z / length,
-            w: wValue / length
-        };
-    }
-
-    quaternionToEuler(q) {
-        // Roll (x-axis rotation)
-        const sinr = 2 * (q.w * q.x + q.y * q.z);
-        const cosr = 1 - 2 * (q.x * q.x + q.y * q.y);
-        const roll = Math.atan2(sinr, cosr);
-
-        // Pitch (y-axis rotation)
-        const sinp = 2 * (q.w * q.y - q.z * q.x);
-        const pitch = Math.abs(sinp) >= 1 ? Math.sign(sinp) * (Math.PI / 2) : Math.asin(sinp);
-
-        // Yaw (z-axis rotation)
-        const siny = 2 * (q.w * q.z + q.x * q.y);
-        const cosy = 1 - 2 * (q.y * q.y + q.z * q.z);
-        const yaw = Math.atan2(siny, cosy);
-
-        return { roll, pitch, yaw };
-    }
-
     normalizeConfidence(value) {
         if (!Number.isFinite(value)) {
             return this.baseAlpha;
@@ -337,7 +299,7 @@ export class ShaderQuaternionSynchronizer {
             return 0;
         }
 
-        const deltaQuat = this.multiply(quaternion, this.conjugate(this.lastQuaternion));
+        const deltaQuat = multiplyQuaternions(quaternion, conjugateQuaternion(this.lastQuaternion));
         const angle = 2 * Math.atan2(
             Math.hypot(deltaQuat.x, deltaQuat.y, deltaQuat.z),
             deltaQuat.w
@@ -352,19 +314,6 @@ export class ShaderQuaternionSynchronizer {
         this.lastQuaternion = quaternion;
         this.lastTimestamp = timestamp;
         return this.motionEnergy;
-    }
-
-    multiply(a, b) {
-        return {
-            w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
-            x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
-            y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
-            z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w
-        };
-    }
-
-    conjugate(q) {
-        return { x: -q.x, y: -q.y, z: -q.z, w: q.w };
     }
 
     lerp(start, end, alpha) {
