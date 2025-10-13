@@ -142,7 +142,12 @@ const paramManager = new ParameterManager();
 
 // Core parameters
 const defaultParams = {
-    geometry: 0,            // 0-7 geometry types
+    geometry: 0,            // 0-23 geometry types
+    geometryBase: 0,        // Base geometry index (tetrahedron, hypercube, ...)
+    geometryCore: 0,        // Core variant index (hypercube, hypersphere, hypertetra)
+    rot4dXY: 0.0,          // -6.28 to 6.28 radians
+    rot4dXZ: 0.0,          // -6.28 to 6.28 radians
+    rot4dYZ: 0.0,          // -6.28 to 6.28 radians
     rot4dXW: 0.0,          // -6.28 to 6.28 radians
     rot4dYW: 0.0,          // -6.28 to 6.28 radians
     rot4dZW: 0.0,          // -6.28 to 6.28 radians
@@ -161,6 +166,7 @@ paramManager.getParameter(name)         // Get single parameter
 paramManager.getAllParameters()         // Get all parameters
 paramManager.validateParameter(name, value) // Validate parameter
 paramManager.getParameterInfo(name)     // Get parameter metadata
+paramManager.setGeometry(index)         // Updates geometry plus derived base/core indices
 ```
 
 #### DeviceTiltHandler
@@ -186,8 +192,8 @@ const status = tiltHandler.getStatus()  // Get current status
     sensitivity: number,
     smoothing: number,
     currentTilt: { alpha, beta, gamma },
-    smoothedRotation: { rot4dXW, rot4dYW, rot4dZW },
-    baseRotation: { rot4dXW, rot4dYW, rot4dZW }
+    smoothedRotation: { rot4dXY, rot4dXZ, rot4dYZ, rot4dXW, rot4dYW, rot4dZW },
+    baseRotation: { rot4dXY, rot4dXZ, rot4dYZ, rot4dXW, rot4dYW, rot4dZW }
 }
 ```
 
@@ -214,7 +220,7 @@ const imported = saveManager.importVariations(data);
     created: '2024-08-29T10:30:00.000Z',
     timestamp: 1693310600000,
     globalId: 42,
-    parameters: { /* 11 core parameters */ },
+    parameters: { /* 14 core parameters */ },
     tags: ['favorite', 'shared'],
     metadata: { /* additional data */ }
 }
@@ -227,7 +233,7 @@ VIB34D exposes several global functions for UI integration:
 ```javascript
 // System Control
 switchSystem('faceted')                 // Switch visualization system
-selectGeometry(3)                       // Set geometry type (0-7)
+selectGeometry(3)                       // Set geometry type (0-23)
 updateParameter('hue', 240)             // Update any parameter
 randomizeAll()                          // Randomize all parameters
 resetAll()                              // Reset to defaults
@@ -638,6 +644,27 @@ window.VIB34D.registerPlugin = function(plugin) {
     this.plugins = this.plugins || [];
     this.plugins.push(plugin);
 };
+```
+
+#### Vib3PlusEnvironment
+*Preconfigured geometry tree and quaternion pipeline*
+
+```javascript
+import createVib3PlusEnvironment from 'vib34d-xr-quaternion-sdk/vib3plus';
+import { SensoryInputBridge } from 'vib34d-xr-quaternion-sdk/sensors';
+
+const environment = createVib3PlusEnvironment({ systems: { faceted, quantum, holographic } });
+const bridge = new SensoryInputBridge();
+
+environment.createSynchronizer(bridge);            // routes six-plane rotations to every system
+environment.applyGeometryIndex(14, { level: 2 });  // hypersphere core variation preset
+environment.applyGeometryComponents({ baseKey: 'torus', coreKey: 'hypertetra-core' }, { level: 1 });
+
+const profile = environment.getRotationProfile({ level: 1 });
+console.log(profile.emphasis); // emphasised planes for the active core
+
+const geometryTree = environment.getGeometryTree();
+console.log(geometryTree[14].core.name); // "HYPERSPHERE CORE"
 ```
 
 ### Custom Export Formats
