@@ -8,6 +8,13 @@
  * visual systems react coherently to wearable localization data.
  */
 
+import {
+    conjugateQuaternion,
+    multiplyQuaternions,
+    normalizeQuaternionObject,
+    quaternionToEuler
+} from '../../../core/quaternion/index.js';
+
 const ROTATION_LIMIT = 6.28; // ±2π rad slider range
 const DEG_PER_RAD = 180 / Math.PI;
 
@@ -24,8 +31,6 @@ const PARAM_LIMITS = {
 
 const CHANNELS = ['spatial.anchors', 'spatial.hit-tests', 'spatial.pose'];
 
-const identityQuaternion = () => ({ x: 0, y: 0, z: 0, w: 1 });
-
 export class ShaderQuaternionSynchronizer {
     constructor(options = {}) {
         const {
@@ -37,7 +42,8 @@ export class ShaderQuaternionSynchronizer {
             baseAlpha = 0.25,
             energySmoothing = 0.35,
             velocityReference = 8,
-            logger = console
+            logger = console,
+            webgpuPipeline = null
         } = options;
 
         if (!bridge || typeof bridge.subscribe !== 'function') {
@@ -62,6 +68,9 @@ export class ShaderQuaternionSynchronizer {
         this.lastQuaternion = null;
         this.lastTimestamp = null;
         this.motionEnergy = 0;
+        this.webgpuPipeline = webgpuPipeline && typeof webgpuPipeline.updatePose === 'function'
+            ? webgpuPipeline
+            : null;
     }
 
     start() {
@@ -93,6 +102,13 @@ export class ShaderQuaternionSynchronizer {
         this.enabled = !!enabled;
     }
 
+    setWebGPUPipeline(pipeline) {
+        if (pipeline && typeof pipeline.updatePose !== 'function') {
+            throw new Error('WebGPU pipeline must expose an updatePose method.');
+        }
+        this.webgpuPipeline = pipeline || null;
+    }
+
     handleEvent(channel, event) {
         if (!this.enabled) {
             return;
@@ -103,7 +119,12 @@ export class ShaderQuaternionSynchronizer {
         if (channel === 'spatial.anchors') {
             const pose = this.extractAnchorPose(event.payload);
             if (pose) {
-                this.applyOrientation(pose.orientation, { confidence, timestamp, source: channel });
+                this.applyOrientation(pose.orientation, {
+                    confidence,
+                    timestamp,
+                    source: channel,
+                    position: pose.position
+                });
             }
             return;
         }
@@ -112,7 +133,12 @@ export class ShaderQuaternionSynchronizer {
             const pose = this.extractHitTestPose(event.payload);
             if (pose) {
                 const effectiveConfidence = this.normalizeConfidence(pose.confidence ?? confidence);
-                this.applyOrientation(pose.orientation, { confidence: effectiveConfidence, timestamp, source: channel });
+                this.applyOrientation(pose.orientation, {
+                    confidence: effectiveConfidence,
+                    timestamp,
+                    source: channel,
+                    position: pose.position
+                });
             }
             return;
         }
@@ -120,7 +146,12 @@ export class ShaderQuaternionSynchronizer {
         if (channel === 'spatial.pose') {
             const orientation = event.payload?.orientation;
             if (orientation) {
-                this.applyOrientation(orientation, { confidence, timestamp, source: channel });
+                this.applyOrientation(orientation, {
+                    confidence,
+                    timestamp,
+                    source: channel,
+                    position: event.payload?.position
+                });
             }
         }
     }
@@ -165,20 +196,17 @@ export class ShaderQuaternionSynchronizer {
         }
         return {
             orientation: best.pose.orientation,
-            confidence: best.confidence
+            confidence: best.confidence,
+            position: best.pose.position
         };
     }
 
     applyOrientation(quaternion, context = {}) {
-        const normalized = this.normalizeQuaternion(quaternion);
+        const normalized = normalizeQuaternionObject(quaternion);
         const timestamp = typeof context.timestamp === 'number' ? context.timestamp : this.lastTimestamp || 0;
         const confidence = this.normalizeConfidence(context.confidence);
 
-        if (!normalized) {
-            return;
-        }
-
-        const euler = this.quaternionToEuler(normalized);
+        const euler = quaternionToEuler(normalized);
         const rotationTarget = {
             rot4dXW: this.clampNumber(euler.pitch * this.rotationScale, PARAM_LIMITS.rot4dXW),
             rot4dYW: this.clampNumber(euler.yaw * this.rotationScale, PARAM_LIMITS.rot4dYW),
@@ -186,6 +214,21 @@ export class ShaderQuaternionSynchronizer {
         };
 
         const motionEnergy = this.computeMotionEnergy(normalized, timestamp);
+
+        if (this.webgpuPipeline) {
+            try {
+                this.webgpuPipeline.updatePose({
+                    position: context.position,
+                    orientation: normalized
+                }, {
+                    timestamp,
+                    motionEnergy,
+                    confidence
+                });
+            } catch (error) {
+                this.logger?.warn?.('[ShaderQuaternionSynchronizer] failed to update WebGPU pipeline', error);
+            }
+        }
 
         this.applyToSystem('quantum', rotationTarget, motionEnergy, confidence, euler);
         this.applyToSystem('holographic', rotationTarget, motionEnergy, confidence, euler);
@@ -270,45 +313,6 @@ export class ShaderQuaternionSynchronizer {
         return map.get(param);
     }
 
-    normalizeQuaternion(quaternion) {
-        if (!quaternion || typeof quaternion !== 'object') {
-            return identityQuaternion();
-        }
-        const x = Number(quaternion.x) || 0;
-        const y = Number(quaternion.y) || 0;
-        const z = Number(quaternion.z) || 0;
-        const w = Number(quaternion.w);
-        const wValue = Number.isFinite(w) ? w : Math.sqrt(Math.max(0, 1 - (x * x + y * y + z * z)));
-        const length = Math.hypot(x, y, z, wValue);
-        if (length === 0) {
-            return identityQuaternion();
-        }
-        return {
-            x: x / length,
-            y: y / length,
-            z: z / length,
-            w: wValue / length
-        };
-    }
-
-    quaternionToEuler(q) {
-        // Roll (x-axis rotation)
-        const sinr = 2 * (q.w * q.x + q.y * q.z);
-        const cosr = 1 - 2 * (q.x * q.x + q.y * q.y);
-        const roll = Math.atan2(sinr, cosr);
-
-        // Pitch (y-axis rotation)
-        const sinp = 2 * (q.w * q.y - q.z * q.x);
-        const pitch = Math.abs(sinp) >= 1 ? Math.sign(sinp) * (Math.PI / 2) : Math.asin(sinp);
-
-        // Yaw (z-axis rotation)
-        const siny = 2 * (q.w * q.z + q.x * q.y);
-        const cosy = 1 - 2 * (q.y * q.y + q.z * q.z);
-        const yaw = Math.atan2(siny, cosy);
-
-        return { roll, pitch, yaw };
-    }
-
     normalizeConfidence(value) {
         if (!Number.isFinite(value)) {
             return this.baseAlpha;
@@ -337,7 +341,7 @@ export class ShaderQuaternionSynchronizer {
             return 0;
         }
 
-        const deltaQuat = this.multiply(quaternion, this.conjugate(this.lastQuaternion));
+        const deltaQuat = multiplyQuaternions(quaternion, conjugateQuaternion(this.lastQuaternion));
         const angle = 2 * Math.atan2(
             Math.hypot(deltaQuat.x, deltaQuat.y, deltaQuat.z),
             deltaQuat.w
@@ -352,19 +356,6 @@ export class ShaderQuaternionSynchronizer {
         this.lastQuaternion = quaternion;
         this.lastTimestamp = timestamp;
         return this.motionEnergy;
-    }
-
-    multiply(a, b) {
-        return {
-            w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
-            x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
-            y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
-            z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w
-        };
-    }
-
-    conjugate(q) {
-        return { x: -q.x, y: -q.y, z: -q.z, w: q.w };
     }
 
     lerp(start, end, alpha) {
