@@ -95,11 +95,14 @@ Each engine represents a different mathematical and visual approach:
 - Glassmorphic rendering style
 - Advanced projection algorithms
 
-### 2. Parameter System (11 Core Parameters)
+### 2. Parameter System (14 Core Parameters)
 
 ```javascript
 {
-  geometry: 0-7,           // 8 different geometric forms
+  geometry: 0-23,          // 24 geometry/core combinations
+  rot4dXY: -6.28 to 6.28,  // 4D rotation in XY plane
+  rot4dXZ: -6.28 to 6.28,  // 4D rotation in XZ plane
+  rot4dYZ: -6.28 to 6.28,  // 4D rotation in YZ plane
   rot4dXW: -6.28 to 6.28,  // 4D rotation in XW plane
   rot4dYW: -6.28 to 6.28,  // 4D rotation in YW plane
   rot4dZW: -6.28 to 6.28,  // 4D rotation in ZW plane
@@ -133,9 +136,9 @@ The system maps device orientation directly to 4D rotation parameters:
 
 ```javascript
 Device Tilt → 4D Rotation Mapping
-├── Beta (front-back tilt) → XW rotation
-├── Gamma (left-right tilt) → YW rotation
-└── Alpha (compass heading) → ZW rotation
+├── Beta/Gamma synthesis → XY & XZ rotations
+├── Beta/Alpha synthesis → YZ & XW rotations
+├── Gamma/Alpha synthesis → YW & ZW rotations
 ```
 
 ### Mobile Optimizations

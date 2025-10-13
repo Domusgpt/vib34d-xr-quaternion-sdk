@@ -296,6 +296,11 @@ export class SensoryInputBridge {
         }
 
         switch (type) {
+            case 'spatial.pose': {
+                const adjustedConfidence = this.computeSpatialPoseConfidence(confidence, payload);
+                this.emit(type, { payload, confidence: adjustedConfidence, timestamp });
+                break;
+            }
             case 'eye-tracking':
                 this.updateFocus(payload, confidence, timestamp);
                 break;
@@ -316,6 +321,15 @@ export class SensoryInputBridge {
                 this.emit(type, { payload, confidence, timestamp });
                 break;
         }
+    }
+
+    computeSpatialPoseConfidence(confidence, payload) {
+        const numericConfidence = Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) : 1;
+        if (!payload || typeof payload.confidence !== 'number') {
+            return numericConfidence;
+        }
+        const hint = Math.max(0, Math.min(1, payload.confidence));
+        return Math.min(numericConfidence, hint);
     }
 
     applyWearableComposite(type, payload, confidence, timestamp) {
