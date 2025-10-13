@@ -1,3 +1,15 @@
+import {
+    QuaternionFieldService,
+    normalizeQuaternion as normalizeQuaternionUtil,
+    quaternionToEuler as quaternionToEulerUtil,
+    multiplyQuaternions,
+    conjugateQuaternion
+} from '../../../core/quaternions/QuaternionFieldService.js';
+import {
+    applyVisualizationUpdates,
+    getVisualizationParameter
+} from './contracts/VisualizationParameterContract.js';
+
 /**
  * ShaderQuaternionSynchronizer
  * ------------------------------------------------------------
@@ -24,8 +36,6 @@ const PARAM_LIMITS = {
 
 const CHANNELS = ['spatial.anchors', 'spatial.hit-tests', 'spatial.pose'];
 
-const identityQuaternion = () => ({ x: 0, y: 0, z: 0, w: 1 });
-
 export class ShaderQuaternionSynchronizer {
     constructor(options = {}) {
         const {
@@ -37,7 +47,8 @@ export class ShaderQuaternionSynchronizer {
             baseAlpha = 0.25,
             energySmoothing = 0.35,
             velocityReference = 8,
-            logger = console
+            logger = console,
+            quaternionService
         } = options;
 
         if (!bridge || typeof bridge.subscribe !== 'function') {
@@ -62,6 +73,23 @@ export class ShaderQuaternionSynchronizer {
         this.lastQuaternion = null;
         this.lastTimestamp = null;
         this.motionEnergy = 0;
+
+        this.quaternionService = quaternionService
+            || new QuaternionFieldService({
+                energySmoothing: this.energySmoothing,
+                velocityReference: this.velocityReference,
+                logger: this.logger
+            });
+        this.quaternionServiceObserver = snapshot => {
+            this.applyNormalizedOrientation(snapshot.primaryQuaternion, {
+                timestamp: snapshot.timestamp,
+                confidence: snapshot.confidence,
+                source: snapshot.source,
+                fromQuaternionService: true
+            }, snapshot);
+        };
+        this.quaternionServiceSubscription = null;
+        this.subscribeToQuaternionService();
     }
 
     start() {
@@ -76,6 +104,7 @@ export class ShaderQuaternionSynchronizer {
             });
             this.subscriptions.push(unsubscribe);
         });
+        this.subscribeToQuaternionService();
         return this;
     }
 
@@ -86,6 +115,25 @@ export class ShaderQuaternionSynchronizer {
             } catch (error) {
                 this.logger?.warn?.('[ShaderQuaternionSynchronizer] unsubscribe failed', error);
             }
+        }
+        if (this.quaternionServiceSubscription) {
+            try {
+                this.quaternionServiceSubscription();
+            } catch (error) {
+                this.logger?.warn?.('[ShaderQuaternionSynchronizer] service unsubscribe failed', error);
+            }
+            this.quaternionServiceSubscription = null;
+        }
+    }
+
+    subscribeToQuaternionService() {
+        if (!this.quaternionService || this.quaternionServiceSubscription) {
+            return;
+        }
+        try {
+            this.quaternionServiceSubscription = this.quaternionService.subscribe(this.quaternionServiceObserver);
+        } catch (error) {
+            this.logger?.warn?.('[ShaderQuaternionSynchronizer] failed to subscribe to quaternion service', error);
         }
     }
 
@@ -171,21 +219,46 @@ export class ShaderQuaternionSynchronizer {
 
     applyOrientation(quaternion, context = {}) {
         const normalized = this.normalizeQuaternion(quaternion);
-        const timestamp = typeof context.timestamp === 'number' ? context.timestamp : this.lastTimestamp || 0;
-        const confidence = this.normalizeConfidence(context.confidence);
-
         if (!normalized) {
             return;
         }
 
-        const euler = this.quaternionToEuler(normalized);
+        if (this.quaternionService && !context.fromQuaternionService) {
+            this.quaternionService.ingestPrimaryQuaternion(normalized, context);
+            return;
+        }
+
+        this.applyNormalizedOrientation(normalized, context);
+    }
+
+    applyNormalizedOrientation(normalized, context = {}, derived = {}) {
+        const timestamp = typeof derived.timestamp === 'number'
+            ? derived.timestamp
+            : typeof context.timestamp === 'number'
+                ? context.timestamp
+                : this.lastTimestamp ?? (typeof performance !== 'undefined' && typeof performance.now === 'function'
+                    ? performance.now()
+                    : Date.now());
+        const confidence = this.normalizeConfidence(
+            Number.isFinite(derived.confidence) ? derived.confidence : context.confidence
+        );
+
+        const euler = derived.euler || this.quaternionToEuler(normalized);
         const rotationTarget = {
             rot4dXW: this.clampNumber(euler.pitch * this.rotationScale, PARAM_LIMITS.rot4dXW),
             rot4dYW: this.clampNumber(euler.yaw * this.rotationScale, PARAM_LIMITS.rot4dYW),
             rot4dZW: this.clampNumber(euler.roll * this.rotationScale, PARAM_LIMITS.rot4dZW)
         };
 
-        const motionEnergy = this.computeMotionEnergy(normalized, timestamp);
+        let motionEnergy;
+        if (Number.isFinite(derived.motionEnergy)) {
+            motionEnergy = derived.motionEnergy;
+            this.lastQuaternion = normalized;
+            this.lastTimestamp = timestamp;
+            this.motionEnergy = derived.motionEnergy;
+        } else {
+            motionEnergy = this.computeMotionEnergy(normalized, timestamp);
+        }
 
         this.applyToSystem('quantum', rotationTarget, motionEnergy, confidence, euler);
         this.applyToSystem('holographic', rotationTarget, motionEnergy, confidence, euler);
@@ -194,68 +267,79 @@ export class ShaderQuaternionSynchronizer {
 
     applyToSystem(systemName, rotationTarget, motionEnergy, confidence, euler) {
         const system = this.resolveSystem(systemName);
-        if (!system || typeof system.updateParameter !== 'function') {
+        const hasUpdatePath = system
+            && (
+                typeof system.batchUpdate === 'function'
+                || typeof system.updateParameters === 'function'
+                || typeof system.updateParameter === 'function'
+            );
+        if (!hasUpdatePath) {
             return;
         }
 
-        this.applyParameter(systemName, system, 'rot4dXW', rotationTarget.rot4dXW, confidence);
-        this.applyParameter(systemName, system, 'rot4dYW', rotationTarget.rot4dYW, confidence);
-        this.applyParameter(systemName, system, 'rot4dZW', rotationTarget.rot4dZW, confidence);
+        const updates = new Map();
+
+        const rot4dXW = this.prepareParameterValue(systemName, system, 'rot4dXW', rotationTarget.rot4dXW, confidence);
+        if (rot4dXW !== null) {
+            updates.set('rot4dXW', rot4dXW);
+        }
+
+        const rot4dYW = this.prepareParameterValue(systemName, system, 'rot4dYW', rotationTarget.rot4dYW, confidence);
+        if (rot4dYW !== null) {
+            updates.set('rot4dYW', rot4dYW);
+        }
+
+        const rot4dZW = this.prepareParameterValue(systemName, system, 'rot4dZW', rotationTarget.rot4dZW, confidence);
+        if (rot4dZW !== null) {
+            updates.set('rot4dZW', rot4dZW);
+        }
 
         if (systemName === 'quantum') {
             const baseChaos = this.getBaseParameter(systemName, system, 'chaos', 0.2);
             const baseIntensity = this.getBaseParameter(systemName, system, 'intensity', 0.7);
             const chaosTarget = this.clampNumber(baseChaos + motionEnergy * 0.5, PARAM_LIMITS.chaos);
             const intensityTarget = this.clampNumber(baseIntensity + motionEnergy * 0.4, PARAM_LIMITS.intensity);
-            this.applyParameter(systemName, system, 'chaos', chaosTarget, confidence);
-            this.applyParameter(systemName, system, 'intensity', intensityTarget, confidence);
+            const chaosValue = this.prepareParameterValue(systemName, system, 'chaos', chaosTarget, confidence);
+            if (chaosValue !== null) {
+                updates.set('chaos', chaosValue);
+            }
+            const intensityValue = this.prepareParameterValue(systemName, system, 'intensity', intensityTarget, confidence);
+            if (intensityValue !== null) {
+                updates.set('intensity', intensityValue);
+            }
         } else if (systemName === 'holographic') {
             const baseHue = this.getBaseParameter(systemName, system, 'hue', 320);
             const baseSaturation = this.getBaseParameter(systemName, system, 'saturation', 0.9);
             const hueTarget = this.clampNumber(baseHue + euler.yaw * DEG_PER_RAD * 8, PARAM_LIMITS.hue);
             const saturationTarget = this.clampNumber(baseSaturation + motionEnergy * 0.15, PARAM_LIMITS.saturation);
-            this.applyParameter(systemName, system, 'hue', hueTarget, confidence);
-            this.applyParameter(systemName, system, 'saturation', saturationTarget, confidence);
+            const hueValue = this.prepareParameterValue(systemName, system, 'hue', hueTarget, confidence);
+            if (hueValue !== null) {
+                updates.set('hue', hueValue);
+            }
+            const saturationValue = this.prepareParameterValue(systemName, system, 'saturation', saturationTarget, confidence);
+            if (saturationValue !== null) {
+                updates.set('saturation', saturationValue);
+            }
         } else if (systemName === 'faceted') {
             const baseSpeed = this.getBaseParameter(systemName, system, 'speed', 1);
             const speedTarget = this.clampNumber(baseSpeed + motionEnergy * 0.6, PARAM_LIMITS.speed);
-            this.applyParameter(systemName, system, 'speed', speedTarget, confidence);
+            const speedValue = this.prepareParameterValue(systemName, system, 'speed', speedTarget, confidence);
+            if (speedValue !== null) {
+                updates.set('speed', speedValue);
+            }
         }
-    }
 
-    applyParameter(systemName, system, param, targetValue, confidence) {
-        const limits = PARAM_LIMITS[param];
-        const sanitizedTarget = limits ? this.clampNumber(targetValue, limits) : targetValue;
-        const current = this.getCurrentParameter(system, param);
-        const alpha = this.computeAlpha(confidence);
-        const nextValue = this.lerp(current, sanitizedTarget, alpha);
-
-        if (!Number.isFinite(nextValue)) {
+        if (updates.size === 0) {
             return;
         }
 
-        try {
-            system.updateParameter(param, nextValue);
-        } catch (error) {
-            this.logger?.warn?.('[ShaderQuaternionSynchronizer] failed to update parameter', { systemName, param, error });
-        }
-    }
-
-    getCurrentParameter(system, param) {
-        if (!system) return 0;
-        if (typeof system.getParameter === 'function') {
-            const value = system.getParameter(param);
-            return Number.isFinite(value) ? value : 0;
-        }
-        if (system.parameters instanceof Map && system.parameters.has(param)) {
-            const value = Number(system.parameters.get(param));
-            return Number.isFinite(value) ? value : 0;
-        }
-        if (system.parameters && typeof system.parameters[param] !== 'undefined') {
-            const value = Number(system.parameters[param]);
-            return Number.isFinite(value) ? value : 0;
-        }
-        return 0;
+        applyVisualizationUpdates(
+            systemName,
+            system,
+            updates,
+            { confidence, motionEnergy, euler },
+            this.logger
+        );
     }
 
     getBaseParameter(systemName, system, param, fallback) {
@@ -264,49 +348,32 @@ export class ShaderQuaternionSynchronizer {
         }
         const map = this.baseParameters.get(systemName);
         if (!map.has(param)) {
-            const value = this.getCurrentParameter(system, param);
+            const value = getVisualizationParameter(system, param);
             map.set(param, Number.isFinite(value) ? value : fallback);
         }
         return map.get(param);
     }
 
+    prepareParameterValue(systemName, system, param, targetValue, confidence) {
+        const limits = PARAM_LIMITS[param];
+        const sanitizedTarget = limits ? this.clampNumber(targetValue, limits) : targetValue;
+        const current = getVisualizationParameter(system, param);
+        const alpha = this.computeAlpha(confidence);
+        const nextValue = this.lerp(current, sanitizedTarget, alpha);
+
+        if (!Number.isFinite(nextValue)) {
+            return null;
+        }
+
+        return nextValue;
+    }
+
     normalizeQuaternion(quaternion) {
-        if (!quaternion || typeof quaternion !== 'object') {
-            return identityQuaternion();
-        }
-        const x = Number(quaternion.x) || 0;
-        const y = Number(quaternion.y) || 0;
-        const z = Number(quaternion.z) || 0;
-        const w = Number(quaternion.w);
-        const wValue = Number.isFinite(w) ? w : Math.sqrt(Math.max(0, 1 - (x * x + y * y + z * z)));
-        const length = Math.hypot(x, y, z, wValue);
-        if (length === 0) {
-            return identityQuaternion();
-        }
-        return {
-            x: x / length,
-            y: y / length,
-            z: z / length,
-            w: wValue / length
-        };
+        return normalizeQuaternionUtil(quaternion);
     }
 
     quaternionToEuler(q) {
-        // Roll (x-axis rotation)
-        const sinr = 2 * (q.w * q.x + q.y * q.z);
-        const cosr = 1 - 2 * (q.x * q.x + q.y * q.y);
-        const roll = Math.atan2(sinr, cosr);
-
-        // Pitch (y-axis rotation)
-        const sinp = 2 * (q.w * q.y - q.z * q.x);
-        const pitch = Math.abs(sinp) >= 1 ? Math.sign(sinp) * (Math.PI / 2) : Math.asin(sinp);
-
-        // Yaw (z-axis rotation)
-        const siny = 2 * (q.w * q.z + q.x * q.y);
-        const cosy = 1 - 2 * (q.y * q.y + q.z * q.z);
-        const yaw = Math.atan2(siny, cosy);
-
-        return { roll, pitch, yaw };
+        return quaternionToEulerUtil(q);
     }
 
     normalizeConfidence(value) {
@@ -337,7 +404,7 @@ export class ShaderQuaternionSynchronizer {
             return 0;
         }
 
-        const deltaQuat = this.multiply(quaternion, this.conjugate(this.lastQuaternion));
+        const deltaQuat = multiplyQuaternions(quaternion, conjugateQuaternion(this.lastQuaternion));
         const angle = 2 * Math.atan2(
             Math.hypot(deltaQuat.x, deltaQuat.y, deltaQuat.z),
             deltaQuat.w
@@ -352,19 +419,6 @@ export class ShaderQuaternionSynchronizer {
         this.lastQuaternion = quaternion;
         this.lastTimestamp = timestamp;
         return this.motionEnergy;
-    }
-
-    multiply(a, b) {
-        return {
-            w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
-            x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
-            y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
-            z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w
-        };
-    }
-
-    conjugate(q) {
-        return { x: -q.x, y: -q.y, z: -q.z, w: q.w };
     }
 
     lerp(start, end, alpha) {
