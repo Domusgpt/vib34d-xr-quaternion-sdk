@@ -160,37 +160,36 @@ export class QuantumEngine {
     /**
      * Update parameter across all quantum visualizers with enhanced integration
      */
-    updateParameter(param, value) {
-        // Update internal parameter manager
-        this.parameters.setParameter(param, value);
-        
-        // CRITICAL: Apply to all quantum visualizers with immediate render
-        this.visualizers.forEach(visualizer => {
-            if (visualizer.updateParameters) {
-                const params = {};
-                params[param] = value;
-                visualizer.updateParameters(params);
-            } else {
-                // Fallback: direct parameter update with manual render
-                if (visualizer.params) {
-                    visualizer.params[param] = value;
-                    if (visualizer.render) {
-                        visualizer.render();
-                    }
-                }
-            }
-        });
-        
-        console.log(`🔮 Updated quantum ${param}: ${value}`);
+    updateParameter(param, value, context = {}) {
+        const applied = this.applyParameterEntries([[param, value]]);
+        if (!applied) {
+            return;
+        }
+        this.propagateParameterUpdates(applied, context);
     }
-    
+
     /**
      * Update multiple parameters
      */
     updateParameters(params) {
-        Object.keys(params).forEach(param => {
-            this.updateParameter(param, params[param]);
-        });
+        this.batchUpdate(params);
+    }
+
+    /**
+     * Apply multiple parameters atomically, preserving GPU sync expectations.
+     */
+    batchUpdate(updates, context = {}) {
+        const entries = this.normalizeUpdateEntries(updates);
+        if (!entries.length) {
+            return;
+        }
+
+        const applied = this.applyParameterEntries(entries);
+        if (!applied) {
+            return;
+        }
+
+        this.propagateParameterUpdates(applied, context);
     }
     
     /**
@@ -260,10 +259,92 @@ export class QuantumEngine {
         
         render();
         console.log('🎬 Quantum render loop started');
-        
+
         if (window.mobileDebug) {
             window.mobileDebug.log(`✅ Quantum Engine: Render loop started, will render when isActive=true`);
         }
+    }
+
+    normalizeUpdateEntries(updates) {
+        if (!updates) {
+            return [];
+        }
+
+        if (updates instanceof Map) {
+            return Array.from(updates.entries());
+        }
+
+        if (Array.isArray(updates)) {
+            return updates
+                .map(entry => Array.isArray(entry) ? entry : [entry?.param, entry?.value])
+                .filter(entry => entry && entry.length === 2 && entry[0] !== undefined);
+        }
+
+        if (typeof updates === 'object') {
+            return Object.entries(updates);
+        }
+
+        return [];
+    }
+
+    applyParameterEntries(entries) {
+        if (!Array.isArray(entries) || entries.length === 0) {
+            return null;
+        }
+
+        const applied = {};
+
+        for (const [param, value] of entries) {
+            if (param === undefined) {
+                continue;
+            }
+
+            const finalValue = this.applySingleParameter(param, value);
+            if (finalValue !== undefined) {
+                applied[param] = finalValue;
+            }
+        }
+
+        return Object.keys(applied).length ? applied : null;
+    }
+
+    applySingleParameter(param, value) {
+        if (this.parameters && typeof this.parameters.setParameter === 'function') {
+            const didSet = this.parameters.setParameter(param, Number(value));
+            if (didSet) {
+                return this.parameters.getParameter(param);
+            }
+        }
+
+        if (this.parameters && this.parameters.params) {
+            this.parameters.params[param] = value;
+            return this.parameters.params[param];
+        }
+
+        return undefined;
+    }
+
+    propagateParameterUpdates(applied, context = {}) {
+        if (!applied || Object.keys(applied).length === 0) {
+            return;
+        }
+
+        this.visualizers.forEach((visualizer, index) => {
+            try {
+                if (typeof visualizer.updateParameters === 'function') {
+                    visualizer.updateParameters(applied, context);
+                } else if (visualizer.params) {
+                    Object.assign(visualizer.params, applied);
+                    if (typeof visualizer.render === 'function') {
+                        visualizer.render();
+                    }
+                }
+            } catch (error) {
+                console.warn(`❌ Failed to update quantum layer ${index}:`, error);
+            }
+        });
+
+        console.log('🔮 Quantum parameters updated', applied);
     }
     
     /**
