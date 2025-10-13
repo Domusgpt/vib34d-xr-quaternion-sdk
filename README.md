@@ -10,12 +10,18 @@ A focused SDK extracting VIB34D's quaternion mathematics and XR sensor integrati
 - **4D Polytope Systems**: Real-time projection of tesseracts, 120-cells, and other 4D geometries
 - **Quaternion Mathematics**: Full quaternion algebra for XR rotations and 4D transformations
 - **Geometric Processing**: Advanced polytopal projection and visualization
+- **Quaternion Rotor Compute Pipeline**: WebGPU compute helper with CPU fallback for generating rotation matrices and XW/YW/ZW scalars.
 
 ### XR Integration Layer
 - **Sensor Schema Registry**: Normalizes quaternion data from XR devices
 - **AR Visor Adapter**: Processes spatial tracking and pose data
 - **Shader Quaternion Synchronizer**: GPU-ready quaternion-to-matrix conversion
 - **Sensory Input Bridge**: Centralizes XR sensor routing
+- **WebXR Quaternion Bridge**: Streams XRFrame poses, rotor snapshots, and audio bands into the WebGPU glass composer
+- **Glass Uniform Controller**: Centralizes localization ingestion, rotor fusion, and uniform ring updates for both preview and production WebXR pipelines
+- **BufferLayout & Polytope Instance Buffer**: Std140/std430 layout planners plus instanced storage helpers that keep WebGPU uniforms and polytopes aligned across CPU and GPU paths.【F:src/ui/adaptive/renderers/webgpu/BufferLayout.ts†L1-L184】【F:src/ui/adaptive/renderers/webgpu/PolytopeInstanceBuffer.ts†L1-L139】
+- **Localization Quaternion Fabric**: `LocalizationBridge`, `QuaternionFabricRouter`, and `RotorFusionService` capture provenance, confidence, and rotor fusion metrics for stage and anchor localization flows.【F:src/ui/adaptive/localization/LocalizationBridge.ts†L1-L323】【F:src/ui/adaptive/localization/QuaternionFabricRouter.ts†L1-L134】【F:src/ui/adaptive/localization/RotorFusionService.ts†L1-L140】
+- **Glass Layer WGSL Shader Suite**: Hypersphere, hypercube, and hypertetrahedron lattice shaders translated to WGSL with dynamic projection selection and material palette controls.【F:src/ui/adaptive/renderers/webgpu/shaders/GlassLayerShaderBuilder.ts†L1-L312】
 
 ### Visualization Engines
 - **Faceted System**: 2D pattern generation with 4D rotation controls
@@ -95,6 +101,27 @@ vib34d-xr-quaternion-sdk/
     ├── LICENSE_COMMERCIALIZATION_ANALYTICS.md
     └── ... (17 comprehensive docs)
 ```
+
+## 🛠 Development Environment
+
+```bash
+corepack enable
+pnpm install
+pnpm dev:web      # Vite quaternion preview workbench
+pnpm storybook    # Storybook quaternion preview states
+pnpm codegen:localization  # Emit localization uniform bindings (TS/WGSL/C#)
+```
+
+Node.js 18.19+ is required (`.nvmrc` pins the recommended runtime) and pnpm enforces engine compatibility via `.npmrc`.
+
+### WebGPU Glass Composer Preview
+
+Running `pnpm dev:web` now launches a WebGPU-backed preview harness that:
+
+- Instantiates the five-layer `MultiLayerGlassComposer` with HDR intermediate targets.
+- Streams synthetic XR poses through the `GlassUniformController` + `WebXRQuaternionBridge` stack so quaternion sliders immediately affect the WebGPU renderer.
+- Visualizes audio-reactive layer blending, rotor-driven hue shifts, and highlights any configuration risks (texture size, HDR formats) surfaced by the composer.
+- Tones, lattice density, color palettes, and projection selection feed the WGSL shader suite via the controller’s material and palette uniforms so the preview matches production shader behavior.【F:src/dev/webgpuPreviewHarness.ts†L1-L760】
 
 ## 🚀 Key Integration Points
 
