@@ -521,7 +521,7 @@ void main() {
     /**
      * Update visualization parameters
      */
-    updateParameters(params) {
+    updateParameters(params, context = {}) {
         this.params = { ...this.params, ...params };
     }
     

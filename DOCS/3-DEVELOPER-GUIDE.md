@@ -142,7 +142,10 @@ const paramManager = new ParameterManager();
 
 // Core parameters
 const defaultParams = {
-    geometry: 0,            // 0-7 geometry types
+    geometry: 0,            // 0-23 geometry types
+    rot4dXY: 0.0,          // -6.28 to 6.28 radians
+    rot4dXZ: 0.0,          // -6.28 to 6.28 radians
+    rot4dYZ: 0.0,          // -6.28 to 6.28 radians
     rot4dXW: 0.0,          // -6.28 to 6.28 radians
     rot4dYW: 0.0,          // -6.28 to 6.28 radians
     rot4dZW: 0.0,          // -6.28 to 6.28 radians
@@ -186,8 +189,8 @@ const status = tiltHandler.getStatus()  // Get current status
     sensitivity: number,
     smoothing: number,
     currentTilt: { alpha, beta, gamma },
-    smoothedRotation: { rot4dXW, rot4dYW, rot4dZW },
-    baseRotation: { rot4dXW, rot4dYW, rot4dZW }
+    smoothedRotation: { rot4dXY, rot4dXZ, rot4dYZ, rot4dXW, rot4dYW, rot4dZW },
+    baseRotation: { rot4dXY, rot4dXZ, rot4dYZ, rot4dXW, rot4dYW, rot4dZW }
 }
 ```
 
@@ -214,7 +217,7 @@ const imported = saveManager.importVariations(data);
     created: '2024-08-29T10:30:00.000Z',
     timestamp: 1693310600000,
     globalId: 42,
-    parameters: { /* 11 core parameters */ },
+    parameters: { /* 14 core parameters */ },
     tags: ['favorite', 'shared'],
     metadata: { /* additional data */ }
 }
@@ -227,7 +230,7 @@ VIB34D exposes several global functions for UI integration:
 ```javascript
 // System Control
 switchSystem('faceted')                 // Switch visualization system
-selectGeometry(3)                       // Set geometry type (0-7)
+selectGeometry(3)                       // Set geometry type (0-23)
 updateParameter('hue', 240)             // Update any parameter
 randomizeAll()                          // Randomize all parameters
 resetAll()                              // Reset to defaults

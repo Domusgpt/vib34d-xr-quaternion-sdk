@@ -38,6 +38,10 @@
   "engines": {
     "node": ">=16.0.0"
   },
+  "scripts": {
+    "setup": "node ./scripts/setup.mjs",
+    "test": "node --test"
+  },
   "files": [
     "src/",
     "types/",
