@@ -187,6 +187,50 @@ export function quaternionToMatrix3(q: Quaternion): number[] {
   return [m4[0], m4[1], m4[2], m4[4], m4[5], m4[6], m4[8], m4[9], m4[10]];
 }
 
+export type EulerAngles = [number, number, number];
+
+export function quaternionToEuler(q: Quaternion): EulerAngles {
+  const [x, y, z, w] = normalize(q);
+
+  const sinrCosp = 2 * (w * x + y * z);
+  const cosrCosp = 1 - 2 * (x * x + y * y);
+  const roll = Math.atan2(sinrCosp, cosrCosp);
+
+  const sinp = 2 * (w * y - z * x);
+  let pitch: number;
+  if (Math.abs(sinp) >= 1) {
+    pitch = Math.sign(sinp) * Math.PI * 0.5;
+  } else {
+    pitch = Math.asin(sinp);
+  }
+
+  const sinyCosp = 2 * (w * z + x * y);
+  const cosyCosp = 1 - 2 * (y * y + z * z);
+  const yaw = Math.atan2(sinyCosp, cosyCosp);
+
+  return [roll, pitch, yaw];
+}
+
+export function quaternionTo4DRotationAngles(q: Quaternion, scale = 0.5): [number, number, number] {
+  const [roll, pitch, yaw] = quaternionToEuler(q);
+  return [roll * scale, pitch * scale, yaw * scale];
+}
+
+export interface QuaternionRotorSnapshot {
+  readonly matrix4: number[];
+  readonly euler: EulerAngles;
+  readonly rotor4d: [number, number, number];
+}
+
+export function deriveRotorSnapshot(q: Quaternion): QuaternionRotorSnapshot {
+  const normalized = normalize(q);
+  return {
+    matrix4: quaternionToMatrix4(normalized),
+    euler: quaternionToEuler(normalized),
+    rotor4d: quaternionTo4DRotationAngles(normalized)
+  };
+}
+
 export function matrix3ToQuaternion(matrix: readonly number[]): Quaternion {
   if (matrix.length !== 9) {
     throw new Error('Matrix3 requires 9 components.');
