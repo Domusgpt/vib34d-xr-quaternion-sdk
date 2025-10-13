@@ -22,6 +22,7 @@ A focused SDK extracting VIB34D's quaternion mathematics and XR sensor integrati
 - **Quantum System**: 3D lattice structures with quaternion-driven transformations
 - **Holographic System**: Audio-reactive visualizations with 4D hyperplane rotation
 - **Polychora System**: Native 4D polytope rendering
+- **Vib3+ Environment**: Curated base tree with 24 geometry+core pairings and six-plane rotation routing
 
 ### Commercial Features
 - **License Manager**: Attestation profiles for enterprise/studio/indie tiers
@@ -116,12 +117,50 @@ ShaderQuaternionSynchronizer.updateUniforms(quaternion);
 
 ### 4D Rotation Control
 
-All visualization systems share quaternion-driven 4D rotation:
+All visualization systems share quaternion-driven 4D rotation across the full six planes:
+- `rot4dXY` - Rotation in XY plane
+- `rot4dXZ` - Rotation in XZ plane
+- `rot4dYZ` - Rotation in YZ plane
 - `rot4dXW` - Rotation in XW plane
 - `rot4dYW` - Rotation in YW plane
 - `rot4dZW` - Rotation in ZW plane
 
-These map directly to XR device orientations via `ShaderQuaternionSynchronizer`.
+These map directly to XR device orientations via `ShaderQuaternionSynchronizer`. The `Vib3PlusEnvironment`
+packages the synchronizer with the shared quaternion field service so the faceted, quantum, and holographic
+systems all receive the six-plane updates from a single integration point.
+
+### Vib3+ Base Tree
+
+The `src/vib3plus` module exposes a ready-to-use orchestration layer for teams who want a clean starting point
+that already includes:
+
+- **24 geometry presets** – every base geometry (tetrahedron, hypercube, sphere, torus, Klein bottle, fractal,
+  wave, crystal) combined with the Hypercube, Hypersphere, and Hypertetra cores.
+- **Normalized parameter sets** – each geometry/core pair ships with leveled variation presets using the shared
+  visualization contract (grid density, morph factor, chaos, hue, and zeroed 4D rotations).
+- **Synchronized geometry metadata** – `geometry`, `geometryBase`, and `geometryCore` stay in lockstep so downstream
+  systems can use either the combined index or the discrete base/core identifiers without re-deriving them.
+- **Declarative geometry selection helpers** – `GeometryLibrary.resolveGeometryIndex()` and
+  `Vib3PlusEnvironment.applyGeometryComponents()` accept base/core identifiers and broadcast the associated rotation
+  profile so integrators can swap presets without handling encoded indices directly.
+- **Rotation utilities** – `Vib3PlusEnvironment.applyRotationProfile()` and `applyRotationDeltas()` push all six plane values
+  (XY/XZ/YZ/XW/YW/ZW) through the broadcast pipeline with rich context metadata, while `setRotationPlane()` handles targeted
+  adjustments for gesture or animation systems.
+- **Centralized quaternion routing** – `Vib3PlusEnvironment` wires the `QuaternionFieldService`,
+  `ShaderQuaternionSynchronizer`, and downstream systems so XR pose data flows to the faceted, quantum, and
+  holographic renderers without extra scaffolding.
+
+Usage example:
+
+```javascript
+import createVib3PlusEnvironment from 'vib34d-xr-quaternion-sdk/vib3plus';
+import { SensoryInputBridge } from 'vib34d-xr-quaternion-sdk/sensors';
+
+const bridge = new SensoryInputBridge();
+const environment = createVib3PlusEnvironment({ systems: { faceted, quantum, holographic } });
+environment.createSynchronizer(bridge);
+environment.applyGeometryIndex(12, { level: 1 });
+```
 
 ## 📖 Documentation
 
@@ -130,6 +169,8 @@ See `DOCS/` directory for complete technical documentation:
 **Core Integration Guides:**
 - `QUATERNIONS_IN_XR.md` - XR quaternion mathematics and OpenXR/WebXR integration
 - `QUATERNION_VISUALIZER_AND_XR_LOCALIZATION_RESEARCH.md` - Research and implementation details
+- `XR_SCHEMA_GUIDE.md` - WebXR/OpenXR pose normalization and confidence derivation reference
+- `VISUALIZATION_PARAMETER_CONTRACT.md` - Shared interface for faceted, quantum, and holographic systems
 - `ADAPTIVE_SDK_DEVELOPER_HANDOFF_GUIDE.md` - Complete developer handoff guide
 
 **Technical References:**
@@ -154,6 +195,24 @@ This SDK is designed for integration into XR applications that need:
 - GPU-optimized quaternion-to-matrix conversion
 
 See `DOCS/ADAPTIVE_SDK_DEVELOPER_HANDOFF_GUIDE.md` for complete integration instructions.
+
+## 🛠️ Environment & Development Track
+
+For a step-by-step environment checklist, recommended XR tooling, and the phased
+refactoring plan that centralizes quaternion handling across the faceted,
+quantum, and holographic systems, review
+`DOCS/ENVIRONMENT_AND_DEVELOPMENT_TRACK.md`.
+
+### Quickstart Setup
+
+```bash
+nvm use
+npm run setup
+```
+
+The setup script enforces the Node.js version declared in `.nvmrc`, hydrates npm
+dependencies when needed, and prints the immediate follow-up steps from the
+development track guide.
 
 ## 🌟 Key Technologies
 
