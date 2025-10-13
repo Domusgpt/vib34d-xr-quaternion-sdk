@@ -7,9 +7,14 @@
   "exports": {
     ".": "./src/core/AdaptiveSDK.js",
     "./quaternion": "./src/ui/adaptive/renderers/ShaderQuaternionSynchronizer.js",
+    "./core/quaternion": "./src/core/quaternion/index.js",
     "./sensors": "./src/ui/adaptive/SensoryInputBridge.js",
     "./polychora": "./src/core/PolychoraSystem.js",
-    "./geometry": "./src/geometry/GeometryLibrary.js"
+    "./geometry": "./src/geometry/GeometryLibrary.js",
+    "./webgpu": "./src/ui/adaptive/renderers/webgpu/WebGPUGlassmorphicPipeline.js",
+    "./webgpu/triple-buffer": "./src/ui/adaptive/renderers/webgpu/TripleBufferedUniform.js",
+    "./webgpu/quaternion-compute": "./src/ui/adaptive/renderers/webgpu/WebGPUQuaternionCompute.js",
+    "./webgpu/render-bundle": "./src/ui/adaptive/renderers/webgpu/WebGPURenderBundleCache.js"
   },
   "keywords": [
     "quaternion",
@@ -42,5 +47,9 @@
     "src/",
     "DOCS/",
     "README.md"
-  ]
+  ],
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "demo:webgpu": "node scripts/demo-webgpu-pipeline.js"
+  }
 }
