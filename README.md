@@ -96,6 +96,17 @@ vib34d-xr-quaternion-sdk/
     └── ... (17 comprehensive docs)
 ```
 
+## 🛠 Development Environment
+
+```bash
+corepack enable
+pnpm install
+pnpm dev:web      # Vite quaternion + WebGPU preview workbench
+pnpm storybook    # Storybook quaternion preview states
+```
+
+Node.js 18.19+ is required (`.nvmrc` pins the recommended runtime) and pnpm enforces engine compatibility via `.npmrc`.
+
 ## 🚀 Key Integration Points
 
 ### XR Quaternion Pipeline
