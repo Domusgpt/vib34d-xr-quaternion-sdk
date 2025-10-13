@@ -10,6 +10,7 @@ A focused SDK extracting VIB34D's quaternion mathematics and XR sensor integrati
 - **4D Polytope Systems**: Real-time projection of tesseracts, 120-cells, and other 4D geometries
 - **Quaternion Mathematics**: Full quaternion algebra for XR rotations and 4D transformations
 - **Geometric Processing**: Advanced polytopal projection and visualization
+- **Quaternion Rotor Compute Pipeline**: WebGPU compute helper with CPU fallback for generating rotation matrices and XW/YW/ZW scalars.
 
 ### XR Integration Layer
 - **Sensor Schema Registry**: Normalizes quaternion data from XR devices
@@ -95,6 +96,17 @@ vib34d-xr-quaternion-sdk/
     ├── LICENSE_COMMERCIALIZATION_ANALYTICS.md
     └── ... (17 comprehensive docs)
 ```
+
+## 🛠 Development Environment
+
+```bash
+corepack enable
+pnpm install
+pnpm dev:web      # Vite quaternion preview workbench
+pnpm storybook    # Storybook quaternion preview states
+```
+
+Node.js 18.19+ is required (`.nvmrc` pins the recommended runtime) and pnpm enforces engine compatibility via `.npmrc`.
 
 ## 🚀 Key Integration Points
 
