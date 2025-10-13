@@ -40,7 +40,10 @@
   },
   "files": [
     "src/",
+    "types/",
     "DOCS/",
+    "wearable-designer.html",
     "README.md"
-  ]
+  ],
+  "types": "./types/adaptive-sdk.d.ts"
 }

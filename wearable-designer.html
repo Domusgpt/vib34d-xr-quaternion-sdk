@@ -1,0 +1,1696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VIB34D Adaptive Wearable Designer</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg: radial-gradient(circle at 20% 20%, #101826, #04060b 65%);
+            --panel-bg: rgba(12, 18, 32, 0.85);
+            --accent: #4c9fff;
+            --muted: rgba(255, 255, 255, 0.55);
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Inter', system-ui;
+            background: var(--bg);
+            color: #f5f7fb;
+            height: 100vh;
+            display: grid;
+            grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.6fr);
+        }
+
+        .canvas-stack {
+            position: relative;
+            display: grid;
+            place-items: center;
+            overflow: hidden;
+        }
+
+        .canvas-stack canvas {
+            position: absolute;
+            width: 88vmin;
+            height: 88vmin;
+            max-width: 880px;
+            max-height: 880px;
+            border-radius: 28px;
+            backdrop-filter: blur(20px);
+        }
+
+        .canvas-stack canvas:nth-child(1) { mix-blend-mode: screen; opacity: 0.35; }
+        .canvas-stack canvas:nth-child(2) { mix-blend-mode: lighten; opacity: 0.45; }
+        .canvas-stack canvas:nth-child(3) { mix-blend-mode: normal; }
+        .canvas-stack canvas:nth-child(4) { mix-blend-mode: screen; opacity: 0.6; }
+        .canvas-stack canvas:nth-child(5) { mix-blend-mode: screen; opacity: 0.8; }
+
+        aside {
+            padding: 32px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            background: linear-gradient(160deg, rgba(8, 10, 20, 0.9), rgba(12, 18, 32, 0.75));
+            border-left: 1px solid rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(24px);
+        }
+
+        .panel {
+            background: var(--panel-bg);
+            border-radius: 20px;
+            padding: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 20px 40px rgba(10, 20, 40, 0.35);
+        }
+
+        .panel h2 {
+            font-size: 1rem;
+            letter-spacing: 0.08em;
+            margin: 0 0 12px;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .metric {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            background: rgba(255, 255, 255, 0.03);
+            padding: 12px 14px;
+            border-radius: 14px;
+        }
+
+        .metric span:first-child {
+            font-size: 0.75rem;
+            letter-spacing: 0.05em;
+            color: var(--muted);
+        }
+
+        .metric span:last-child {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--accent);
+        }
+
+        .blueprint-metrics {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 18px;
+        }
+
+        .blueprint-metric {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 10px 12px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .blueprint-metric span:first-child {
+            font-size: 0.7rem;
+            letter-spacing: 0.06em;
+            color: rgba(255, 255, 255, 0.55);
+        }
+
+        .blueprint-metric span:last-child {
+            font-size: 1rem;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.92);
+        }
+
+        .blueprint-zone-list {
+            display: grid;
+            gap: 10px;
+            margin: 0 0 16px;
+            padding: 0;
+            list-style: none;
+        }
+
+        .blueprint-zone {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            padding: 10px 12px;
+        }
+
+        .blueprint-zone strong {
+            display: block;
+            font-size: 0.82rem;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.76);
+        }
+
+        .blueprint-zone span {
+            display: block;
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.55);
+            margin-top: 4px;
+            letter-spacing: 0.03em;
+        }
+
+        .meta-line {
+            font-size: 0.68rem;
+            letter-spacing: 0.08em;
+            color: rgba(255, 255, 255, 0.5);
+            text-transform: uppercase;
+        }
+
+        .empty-state {
+            font-size: 0.75rem;
+            color: rgba(255, 255, 255, 0.55);
+            padding: 12px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.03);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .pack-list {
+            display: grid;
+            gap: 12px;
+            margin-top: 14px;
+        }
+
+        .pack-card {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 14px;
+            padding: 14px 16px;
+            display: grid;
+            gap: 6px;
+        }
+
+        .pack-card h3 {
+            margin: 0;
+            font-size: 0.95rem;
+            color: #fff;
+        }
+
+        .pack-card p {
+            margin: 0;
+            font-size: 0.75rem;
+            color: rgba(255, 255, 255, 0.65);
+        }
+
+        .pack-card .meta {
+            font-size: 0.68rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .snapshot-controls {
+            display: flex;
+            gap: 8px;
+            margin-top: 18px;
+        }
+
+        .snapshot-controls button {
+            flex: 1;
+            background: rgba(76, 159, 255, 0.15);
+            border: 1px solid rgba(76, 159, 255, 0.45);
+            color: #f5f7fb;
+            border-radius: 12px;
+            padding: 10px 14px;
+            font-size: 0.75rem;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            cursor: pointer;
+        }
+
+        .snapshot-controls button:hover {
+            background: rgba(76, 159, 255, 0.3);
+        }
+
+        .kpi-summary {
+            margin-top: 16px;
+            display: grid;
+            gap: 8px;
+        }
+
+        .snapshot-list {
+            margin-top: 16px;
+            display: grid;
+            gap: 8px;
+        }
+
+        .remote-storage {
+            margin-top: 20px;
+            padding: 14px 16px;
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            display: grid;
+            gap: 12px;
+        }
+
+        .remote-storage .remote-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 12px;
+        }
+
+        .remote-storage h3 {
+            margin: 0;
+            font-size: 0.9rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .remote-log {
+            display: grid;
+            gap: 8px;
+        }
+
+        .remote-log-entry {
+            background: rgba(12, 20, 34, 0.65);
+            border-radius: 12px;
+            padding: 10px 12px;
+            display: grid;
+            gap: 4px;
+            border: 1px solid rgba(76, 159, 255, 0.18);
+        }
+
+        .remote-log-entry strong {
+            font-size: 0.78rem;
+            letter-spacing: 0.05em;
+        }
+
+        .remote-log-entry span {
+            font-size: 0.72rem;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .remote-log-entry--error {
+            border-color: rgba(255, 90, 90, 0.45);
+            background: rgba(38, 12, 18, 0.7);
+        }
+
+        .remote-actions {
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .remote-actions button {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 10px;
+            padding: 8px 12px;
+            color: #f5f7fb;
+            font-size: 0.7rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            cursor: pointer;
+        }
+
+        .remote-actions button:hover {
+            background: rgba(255, 255, 255, 0.12);
+        }
+
+        .snapshot-item {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            padding: 10px 12px;
+            display: grid;
+            gap: 4px;
+        }
+
+        .snapshot-item strong {
+            font-size: 0.78rem;
+            letter-spacing: 0.05em;
+        }
+
+        .snapshot-item span {
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .pattern-card {
+            display: grid;
+            gap: 12px;
+        }
+
+        .pattern-card h3 {
+            margin: 0;
+            font-size: 1.2rem;
+        }
+
+        .pattern-card p {
+            margin: 0;
+            color: rgba(255, 255, 255, 0.65);
+            line-height: 1.4;
+        }
+
+        .tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(76, 159, 255, 0.1);
+            color: var(--accent);
+        }
+
+        button {
+            background: rgba(76, 159, 255, 0.1);
+            border: 1px solid rgba(76, 159, 255, 0.3);
+            color: var(--accent);
+            padding: 12px 16px;
+            border-radius: 14px;
+            font-size: 0.85rem;
+            letter-spacing: 0.05em;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: rgba(76, 159, 255, 0.2);
+        }
+
+        .variation-controls {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .variation-controls input[type="range"] {
+            width: 100%;
+        }
+
+        .consent-grid {
+            display: grid;
+            gap: 12px;
+        }
+
+        .consent-toggle {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            background: rgba(255, 255, 255, 0.03);
+            padding: 12px 14px;
+            border-radius: 14px;
+        }
+
+        .consent-toggle div {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .consent-toggle span {
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .consent-toggle small {
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.5);
+            letter-spacing: 0.03em;
+        }
+
+        .consent-toggle input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            accent-color: var(--accent);
+        }
+
+        .consent-status {
+            margin-top: 14px;
+            font-size: 0.78rem;
+            color: rgba(255, 255, 255, 0.65);
+            line-height: 1.5;
+        }
+
+        .consent-status strong {
+            color: var(--accent);
+        }
+
+        .compliance-log {
+            list-style: none;
+            margin: 18px 0 0;
+            padding: 0;
+            display: grid;
+            gap: 10px;
+        }
+
+        .compliance-log li {
+            background: rgba(255, 255, 255, 0.03);
+            padding: 10px 12px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            color: rgba(255, 255, 255, 0.78);
+        }
+
+        .compliance-log li span {
+            display: block;
+            margin-top: 4px;
+            font-size: 0.68rem;
+            color: rgba(255, 255, 255, 0.5);
+            letter-spacing: 0.04em;
+        }
+
+        .panel button.secondary {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.12);
+            color: rgba(255, 255, 255, 0.85);
+        }
+
+        .panel button.secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .projection-stack {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            margin-bottom: 16px;
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.02);
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+        }
+
+        .projection-stack canvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .projection-metrics {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .projection-metric {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            background: rgba(255, 255, 255, 0.03);
+            padding: 10px 12px;
+            border-radius: 12px;
+        }
+
+        .projection-metric span:first-child {
+            font-size: 0.7rem;
+            letter-spacing: 0.05em;
+            color: rgba(255, 255, 255, 0.55);
+        }
+
+        .projection-metric span:last-child {
+            font-size: 1rem;
+            font-weight: 600;
+            color: rgba(76, 159, 255, 0.9);
+        }
+
+        .projection-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 14px;
+        }
+
+        .projection-controls select {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: rgba(255, 255, 255, 0.9);
+            border-radius: 12px;
+            padding: 8px 10px;
+            font-size: 0.85rem;
+        }
+
+        .projection-controls button {
+            white-space: nowrap;
+        }
+
+        .projection-status {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 14px;
+        }
+
+        .projection-status .status-line {
+            font-size: 0.72rem;
+            letter-spacing: 0.04em;
+            color: rgba(255, 255, 255, 0.72);
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            padding: 8px 10px;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+        }
+
+        .projection-status .status-line.status-ok {
+            border-color: rgba(60, 190, 120, 0.35);
+        }
+
+        .projection-status .status-line.status-warning {
+            border-color: rgba(220, 176, 30, 0.4);
+        }
+
+        .projection-status .status-line.status-error {
+            border-color: rgba(238, 80, 80, 0.45);
+        }
+
+        .projection-status ul {
+            margin: 0;
+            padding-left: 18px;
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.65);
+        }
+
+        .projection-legend {
+            display: grid;
+            gap: 10px;
+        }
+
+        .projection-legend-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 10px 12px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .projection-legend-item strong {
+            font-size: 0.78rem;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.76);
+        }
+
+        .projection-legend-item span {
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.55);
+            letter-spacing: 0.03em;
+        }
+    </style>
+</head>
+<body>
+    <div class="canvas-stack" id="canvasStack">
+        <canvas id="background-canvas"></canvas>
+        <canvas id="shadow-canvas"></canvas>
+        <canvas id="content-canvas"></canvas>
+        <canvas id="highlight-canvas"></canvas>
+        <canvas id="accent-canvas"></canvas>
+    </div>
+    <aside>
+        <section class="panel">
+            <h2>Adaptive Intent</h2>
+            <div class="metric-grid" id="intentMetrics">
+                <div class="metric"><span>Focus</span><span id="focusMetric">0.50</span></div>
+                <div class="metric"><span>Engagement</span><span id="engagementMetric">0.40</span></div>
+                <div class="metric"><span>Velocity</span><span id="velocityMetric">0.00</span></div>
+                <div class="metric"><span>Stress</span><span id="stressMetric">0.20</span></div>
+            </div>
+        </section>
+        <section class="panel">
+            <h2>Pattern Activation</h2>
+            <div class="pattern-card">
+                <span class="tag" id="patternTier">STARTER</span>
+                <h3 id="patternName">Neuro Glance Feed</h3>
+                <p id="patternDescription">Micro-summaries that respond to attention bursts and biometric calmness.</p>
+                <div class="tag" id="integrationTag">Figma: vib34d-neuro-glance-feed</div>
+            </div>
+        </section>
+        <section class="panel">
+            <h2>Adaptive Blueprint</h2>
+            <div class="blueprint-metrics">
+                <div class="blueprint-metric"><span>Intensity</span><span id="blueprintIntensity">0.50</span></div>
+                <div class="blueprint-metric"><span>Velocity</span><span id="blueprintVelocity">0.00</span></div>
+                <div class="blueprint-metric"><span>Engagement</span><span id="blueprintEngagement">0.40</span></div>
+                <div class="blueprint-metric"><span>Stress</span><span id="blueprintStress">0.20</span></div>
+            </div>
+            <ul class="blueprint-zone-list" id="blueprintZoneList"></ul>
+            <button class="secondary" id="downloadBlueprintBtn" type="button">Download Blueprint</button>
+        </section>
+        <section class="panel" id="projectionPanel">
+            <h2>4D Projection Field</h2>
+            <div class="projection-stack" id="projectionStack">
+                <canvas id="projection-base"></canvas>
+                <canvas id="projection-bands"></canvas>
+                <canvas id="projection-halo"></canvas>
+                <canvas id="projection-contours"></canvas>
+            </div>
+            <div class="projection-metrics">
+                <div class="projection-metric"><span>Halo Radius</span><span id="projectionHaloRadius">--</span></div>
+                <div class="projection-metric"><span>Depth Bias</span><span id="projectionDepthBias">--</span></div>
+                <div class="projection-metric"><span>Contours</span><span id="projectionContourCount">--</span></div>
+                <div class="projection-metric"><span>Field Density</span><span id="projectionFieldDensity">--</span></div>
+            </div>
+            <div class="projection-controls">
+                <select id="projectionScenarioSelect" aria-label="Projection scenario"></select>
+                <button id="projectionSimulateBtn" type="button">Advance Cycle</button>
+            </div>
+            <div class="projection-status" id="projectionScenarioStatus"></div>
+            <div class="projection-legend" id="projectionLegend"></div>
+        </section>
+        <section class="panel">
+            <h2>Variations</h2>
+            <div class="variation-controls">
+                <input type="range" min="0" max="99" value="0" id="variationSlider">
+                <button id="randomizeBtn">Randomize</button>
+            </div>
+            <p style="margin-top: 12px; color: rgba(255,255,255,0.6); font-size: 0.85rem;" id="variationLabel">1 - TETRAHEDRON LATTICE</p>
+        </section>
+        <section class="panel" id="telemetryConsentPanel"></section>
+        <section class="panel" id="commercializationPanel">
+            <h2>Commercialization Coverage</h2>
+            <p class="meta-line" id="commercializationUpdated" style="margin: 0 0 12px;"></p>
+            <div class="metric-grid" id="segmentCoverageGrid"></div>
+            <div class="metric-grid" id="regionCoverageGrid" style="margin-top: 12px;"></div>
+            <div class="pack-list" id="commercializationPackList"></div>
+            <div class="snapshot-controls">
+                <button id="captureSnapshotBtn" type="button">Capture Snapshot</button>
+                <button id="exportSnapshotsBtn" type="button">Download KPI Export</button>
+            </div>
+            <div class="kpi-summary" id="commercializationKpiSummary"></div>
+            <div class="snapshot-list" id="commercializationSnapshotList"></div>
+            <div class="remote-storage" id="commercializationRemoteStatus">
+                <div class="remote-header">
+                    <h3>Remote Persistence</h3>
+                    <span class="meta-line" id="commercializationRemoteLastUpload">No remote uploads yet</span>
+                </div>
+                <div class="remote-log" id="commercializationRemoteLog"></div>
+                <div class="remote-actions">
+                    <button id="clearRemoteLogBtn" type="button">Reset Remote Log</button>
+                </div>
+            </div>
+        </section>
+    </aside>
+
+    <script type="module">
+        import { createAdaptiveSDK } from './src/core/AdaptiveSDK.js';
+        import { LayoutAnnotation } from './src/ui/adaptive/annotations/LayoutAnnotation.js';
+        import { ComplianceVaultTelemetryProvider } from './src/product/telemetry/ComplianceVaultTelemetryProvider.js';
+        import { createConsentPanel } from './src/ui/components/ConsentPanel.js';
+        import { createCommercializationSnapshotRemoteStorage } from './src/product/licensing/storage/CommercializationSnapshotStorageAdapters.js';
+        import { createLayoutBlueprintRenderer, buildLayoutBlueprint } from './src/ui/adaptive/renderers/LayoutBlueprintRenderer.js';
+
+        const complianceVaultProvider = new ComplianceVaultTelemetryProvider({ maxRecords: 24 });
+        let consentPanel;
+
+        const segmentCoverageGrid = document.getElementById('segmentCoverageGrid');
+        const regionCoverageGrid = document.getElementById('regionCoverageGrid');
+        const commercializationPackList = document.getElementById('commercializationPackList');
+        const commercializationUpdated = document.getElementById('commercializationUpdated');
+        const captureSnapshotBtn = document.getElementById('captureSnapshotBtn');
+        const exportSnapshotsBtn = document.getElementById('exportSnapshotsBtn');
+        const snapshotList = document.getElementById('commercializationSnapshotList');
+        const commercializationKpiSummary = document.getElementById('commercializationKpiSummary');
+        const remoteLastUpload = document.getElementById('commercializationRemoteLastUpload');
+        const remoteLogContainer = document.getElementById('commercializationRemoteLog');
+        const clearRemoteLogBtn = document.getElementById('clearRemoteLogBtn');
+        const blueprintIntensity = document.getElementById('blueprintIntensity');
+        const blueprintVelocity = document.getElementById('blueprintVelocity');
+        const blueprintEngagement = document.getElementById('blueprintEngagement');
+        const blueprintStress = document.getElementById('blueprintStress');
+        const blueprintZoneList = document.getElementById('blueprintZoneList');
+        const downloadBlueprintBtn = document.getElementById('downloadBlueprintBtn');
+        const projectionHaloRadius = document.getElementById('projectionHaloRadius');
+        const projectionDepthBias = document.getElementById('projectionDepthBias');
+        const projectionContourCount = document.getElementById('projectionContourCount');
+        const projectionFieldDensity = document.getElementById('projectionFieldDensity');
+        const projectionScenarioSelect = document.getElementById('projectionScenarioSelect');
+        const projectionSimulateBtn = document.getElementById('projectionSimulateBtn');
+        const projectionLegend = document.getElementById('projectionLegend');
+        const projectionScenarioStatus = document.getElementById('projectionScenarioStatus');
+
+        let adaptiveSDKRef;
+        let stopSnapshotSchedule = null;
+
+        const remoteUploadLog = [];
+        let latestBlueprint = null;
+        let latestProjectionComposition = null;
+        let activeProjectionScenario = '__realtime__';
+        const projectionScenarioMeta = new Map();
+        const projectionPackMeta = new Map();
+        let projectionCatalogSnapshot = { packs: [], scenarios: [] };
+
+        const validationStatusIcon = { ok: '✅', warning: '⚠️', error: '⛔' };
+        const validationStatusLabel = {
+            ok: 'Ready',
+            warning: 'Needs review',
+            error: 'Action required'
+        };
+
+        const formatTime = (value) => {
+            if (!value) return 'unknown';
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return 'unknown';
+            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        };
+
+        const formatDateTime = (value) => {
+            if (!value) return 'unknown';
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return 'unknown';
+            return date.toLocaleString([], { hour: '2-digit', minute: '2-digit' });
+        };
+
+        function renderRemoteStorageStatus() {
+            if (!remoteLogContainer || !remoteLastUpload) {
+                return;
+            }
+
+            if (remoteUploadLog.length === 0) {
+                remoteLastUpload.textContent = 'No remote uploads yet';
+                remoteLogContainer.innerHTML = '<div class="empty-state">Remote storage will sync after the next KPI capture</div>';
+                return;
+            }
+
+            const latestUpload = remoteUploadLog.find(entry => entry.type === 'upload');
+            if (latestUpload) {
+                remoteLastUpload.textContent = `Last remote upload ${formatTime(latestUpload.exportedAt)}`;
+            } else {
+                const latest = remoteUploadLog[0];
+                remoteLastUpload.textContent = `Last remote attempt ${formatTime(latest.exportedAt || latest.occurredAt)}`;
+            }
+
+            remoteLogContainer.innerHTML = '';
+            for (const entry of remoteUploadLog) {
+                const card = document.createElement('div');
+                card.className = `remote-log-entry remote-log-entry--${entry.type}`;
+
+                const title = document.createElement('strong');
+                if (entry.type === 'upload') {
+                    title.textContent = `Uploaded ${entry.recordCount} snapshot${entry.recordCount === 1 ? '' : 's'}`;
+                } else {
+                    title.textContent = 'Upload error';
+                }
+                card.appendChild(title);
+
+                const meta = document.createElement('span');
+                meta.className = 'meta-line';
+                meta.textContent = formatDateTime(entry.exportedAt || entry.occurredAt);
+                card.appendChild(meta);
+
+                if (entry.type === 'upload' && entry.snapshotIds?.length) {
+                    const detail = document.createElement('span');
+                    detail.textContent = `Snapshots: ${entry.snapshotIds.join(', ')}`;
+                    card.appendChild(detail);
+                } else if (entry.type === 'error' && entry.message) {
+                    const detail = document.createElement('span');
+                    detail.textContent = entry.message;
+                    card.appendChild(detail);
+                }
+
+                remoteLogContainer.appendChild(card);
+            }
+        }
+
+        function pushRemoteLog(entry) {
+            remoteUploadLog.unshift(entry);
+            if (remoteUploadLog.length > 6) {
+                remoteUploadLog.length = 6;
+            }
+            renderRemoteStorageStatus();
+        }
+
+        const remoteStorageAdapter = {
+            async write(records) {
+                await new Promise(resolve => setTimeout(resolve, 80));
+                const snapshotIds = Array.isArray(records) ? records.map(item => item.id) : [];
+                pushRemoteLog({
+                    type: 'upload',
+                    exportedAt: new Date().toISOString(),
+                    recordCount: snapshotIds.length,
+                    snapshotIds
+                });
+            },
+            async clear() {
+                remoteUploadLog.length = 0;
+                renderRemoteStorageStatus();
+            }
+        };
+
+        const commercializationRemoteStorage = createCommercializationSnapshotRemoteStorage({
+            adapter: remoteStorageAdapter,
+            includeSummary: false,
+            redactContextKeys: ['licenseKey'],
+            onError: error => {
+                pushRemoteLog({
+                    type: 'error',
+                    message: error?.message || 'Remote upload failed',
+                    occurredAt: new Date().toISOString()
+                });
+            }
+        });
+
+        clearRemoteLogBtn?.addEventListener('click', () => {
+            remoteStorageAdapter.clear?.();
+        });
+
+        renderRemoteStorageStatus();
+
+        const blueprintRenderer = createLayoutBlueprintRenderer({
+            layers: {
+                background: document.getElementById('background-canvas'),
+                shadow: document.getElementById('shadow-canvas'),
+                content: document.getElementById('content-canvas'),
+                highlight: document.getElementById('highlight-canvas'),
+                accent: document.getElementById('accent-canvas')
+            }
+        });
+
+        blueprintRenderer.resize();
+        window.addEventListener('resize', () => blueprintRenderer.resize());
+
+        renderBlueprintPanel(null);
+
+        const projectionComposer = adaptiveSDKRef?.projectionComposer || adaptiveSDK.projectionComposer;
+        const projectionBaseCanvas = document.getElementById('projection-base');
+        const projectionBandCanvas = document.getElementById('projection-bands');
+        const projectionHaloCanvas = document.getElementById('projection-halo');
+        const projectionContourCanvas = document.getElementById('projection-contours');
+
+        projectionComposer.attachLayer('base', projectionBaseCanvas);
+        projectionComposer.attachLayer('bands', projectionBandCanvas);
+        projectionComposer.attachLayer('halo', projectionHaloCanvas);
+        projectionComposer.attachLayer('contours', projectionContourCanvas);
+        projectionComposer.observeResize?.();
+        projectionComposer.resize();
+        window.addEventListener('resize', () => projectionComposer.resize());
+
+        renderProjectionPanel(null);
+        initializeProjectionScenarios();
+
+        const formatLabel = (value) => {
+            if (!value) return 'Unspecified';
+            return value.split(/[-_]/g).map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+        };
+
+        const clamp = (value, min = 0, max = 1) => {
+            const numeric = Number(value);
+            const resolved = Number.isFinite(numeric) ? numeric : min;
+            return Math.min(max, Math.max(min, resolved));
+        };
+
+        const formatPercent = (value) => `${Math.round(clamp(value, 0, 1) * 100)}%`;
+
+        function renderBlueprintPanel(blueprint) {
+            if (!blueprint) {
+                if (blueprintIntensity) blueprintIntensity.textContent = '--';
+                if (blueprintVelocity) blueprintVelocity.textContent = '--';
+                if (blueprintEngagement) blueprintEngagement.textContent = '--';
+                if (blueprintStress) blueprintStress.textContent = '--';
+                if (blueprintZoneList) {
+                    blueprintZoneList.innerHTML = '<li class="blueprint-zone"><span>Awaiting adaptive update</span></li>';
+                }
+                return;
+            }
+
+            blueprintIntensity.textContent = blueprint.intensity.toFixed(2);
+            blueprintVelocity.textContent = blueprint.motion.velocity.toFixed(2);
+            blueprintEngagement.textContent = blueprint.engagementLevel.toFixed(2);
+            blueprintStress.textContent = blueprint.biometricStress.toFixed(2);
+
+            if (!blueprintZoneList) return;
+            blueprintZoneList.innerHTML = '';
+            if (!Array.isArray(blueprint.zones) || blueprint.zones.length === 0) {
+                blueprintZoneList.innerHTML = '<li class="blueprint-zone"><span>No layout zones registered</span></li>';
+                return;
+            }
+
+            for (const zone of blueprint.zones) {
+                const item = document.createElement('li');
+                item.className = 'blueprint-zone';
+
+                const title = document.createElement('strong');
+                title.textContent = formatLabel(zone.id || 'zone');
+                item.appendChild(title);
+
+                const components = Array.isArray(zone.components) && zone.components.length
+                    ? zone.components.join(', ')
+                    : 'None';
+                const componentLine = document.createElement('span');
+                componentLine.textContent = `Components: ${components}`;
+                item.appendChild(componentLine);
+
+                const metricsLine = document.createElement('span');
+                metricsLine.textContent = `Occupancy ${formatPercent(zone.occupancy)} · Surface ${Math.round(zone.surfaceScore * 100)}`;
+                item.appendChild(metricsLine);
+
+                blueprintZoneList.appendChild(item);
+            }
+        }
+
+        function computeFieldDensity(matrix) {
+            if (!Array.isArray(matrix) || matrix.length === 0) {
+                return 0;
+            }
+            let total = 0;
+            let count = 0;
+            for (const row of matrix) {
+                if (!Array.isArray(row)) continue;
+                for (const value of row) {
+                    total += Number(value) || 0;
+                    count += 1;
+                }
+            }
+            return count === 0 ? 0 : total / count;
+        }
+
+        function renderProjectionPanel(composition, metadata = {}) {
+            latestProjectionComposition = composition || null;
+
+            if (!composition) {
+                if (projectionHaloRadius) projectionHaloRadius.textContent = '--';
+                if (projectionDepthBias) projectionDepthBias.textContent = '--';
+                if (projectionContourCount) projectionContourCount.textContent = '--';
+                if (projectionFieldDensity) projectionFieldDensity.textContent = '--';
+                if (projectionLegend) {
+                    projectionLegend.innerHTML = '<div class="projection-legend-item"><span>Projection field will populate after the next adaptive update.</span></div>';
+                }
+                return;
+            }
+
+            const haloRadius = Number(composition.focusHalo?.radius ?? 0).toFixed(2);
+            const deepestBand = Array.isArray(composition.depthBands) && composition.depthBands.length
+                ? composition.depthBands.reduce((prev, band) => band.depth > prev.depth ? band : prev, composition.depthBands[0])
+                : null;
+            const depthBias = deepestBand ? deepestBand.depth.toFixed(2) : '0.00';
+            const contourCount = Array.isArray(composition.gestureContours) ? composition.gestureContours.length : 0;
+            const density = computeFieldDensity(composition.activationMatrix).toFixed(2);
+
+            if (projectionHaloRadius) projectionHaloRadius.textContent = haloRadius;
+            if (projectionDepthBias) projectionDepthBias.textContent = depthBias;
+            if (projectionContourCount) projectionContourCount.textContent = String(contourCount);
+            if (projectionFieldDensity) projectionFieldDensity.textContent = density;
+
+            if (!projectionLegend) {
+                return;
+            }
+
+            projectionLegend.innerHTML = '';
+
+            const header = document.createElement('div');
+            header.className = 'projection-legend-item';
+            const title = document.createElement('strong');
+            if (metadata.mode === 'scenario') {
+                const progress = Math.round((metadata.progress ?? 0) * 100);
+                title.textContent = `${metadata.scenario || 'Scenario'} · ${progress}%`;
+            } else {
+                title.textContent = 'Realtime Field';
+            }
+            header.appendChild(title);
+
+            const detail = document.createElement('span');
+            if (metadata.mode === 'scenario' && metadata.description) {
+                detail.textContent = metadata.description;
+            } else {
+                detail.textContent = 'Live projection derived from adaptive layout + sensor synthesis.';
+            }
+            header.appendChild(detail);
+
+            if (metadata.mode === 'scenario') {
+                if (metadata.packLabel) {
+                    const packLine = document.createElement('span');
+                    packLine.className = 'meta-line';
+                    packLine.textContent = `Pack · ${metadata.packLabel}`;
+                    header.appendChild(packLine);
+                }
+                if (metadata.cycleMs) {
+                    const cycleLine = document.createElement('span');
+                    cycleLine.className = 'meta-line';
+                    cycleLine.textContent = `Cycle ${Math.round(metadata.cycleMs / 1000)}s`;
+                    header.appendChild(cycleLine);
+                }
+            }
+            projectionLegend.appendChild(header);
+
+            if (!Array.isArray(composition.interactionLobes) || composition.interactionLobes.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'projection-legend-item';
+                empty.innerHTML = '<span>No interaction lobes detected.</span>';
+                projectionLegend.appendChild(empty);
+                return;
+            }
+
+            const lobes = composition.interactionLobes.slice(0, 4);
+            for (const lobe of lobes) {
+                const item = document.createElement('div');
+                item.className = 'projection-legend-item';
+
+                const label = document.createElement('strong');
+                label.textContent = (lobe.id || 'lobe').toUpperCase();
+                item.appendChild(label);
+
+                const detailLine = document.createElement('span');
+                detailLine.textContent = `Volume ${lobe.volume.toFixed(2)} · Depth ${lobe.layeringDepth.toFixed(2)} · Visibility ${Math.round(lobe.visibility * 100)}%`;
+                item.appendChild(detailLine);
+
+                projectionLegend.appendChild(item);
+            }
+        }
+
+        function renderProjectionScenarioStatus(scenarioId) {
+            if (!projectionScenarioStatus) {
+                return;
+            }
+            projectionScenarioStatus.innerHTML = '';
+
+            if (!scenarioId || scenarioId === '__realtime__') {
+                const realtimeLine = document.createElement('div');
+                realtimeLine.className = 'status-line status-ok';
+                realtimeLine.textContent = '✅ Realtime field streaming from adaptive inputs.';
+                projectionScenarioStatus.appendChild(realtimeLine);
+                return;
+            }
+
+            const descriptor = projectionScenarioMeta.get(scenarioId);
+            if (!descriptor) {
+                const missingLine = document.createElement('div');
+                missingLine.className = 'status-line status-error';
+                missingLine.textContent = '⛔ Scenario metadata unavailable. Select another entry.';
+                projectionScenarioStatus.appendChild(missingLine);
+                return;
+            }
+
+            const validation = descriptor.metadata?.validation;
+            const status = validation?.status || 'ok';
+            const statusLine = document.createElement('div');
+            statusLine.className = `status-line status-${status}`;
+            const icon = validationStatusIcon[status] || '';
+            const label = validationStatusLabel[status] || 'Ready';
+            const name = descriptor.name || formatLabel(descriptor.id);
+            statusLine.textContent = `${icon ? `${icon} ` : ''}${name} · ${label}`;
+            projectionScenarioStatus.appendChild(statusLine);
+
+            if (validation?.issues?.length) {
+                const issueList = document.createElement('ul');
+                const issueLimit = 4;
+                validation.issues.slice(0, issueLimit).forEach(issue => {
+                    const item = document.createElement('li');
+                    item.textContent = issue.path ? `${issue.message} (${issue.path})` : issue.message;
+                    issueList.appendChild(item);
+                });
+                if (validation.issues.length > issueLimit) {
+                    const more = document.createElement('li');
+                    more.textContent = `+${validation.issues.length - issueLimit} additional issue(s)`;
+                    issueList.appendChild(more);
+                }
+                projectionScenarioStatus.appendChild(issueList);
+            }
+
+            const packId = descriptor.metadata?.packId;
+            if (packId) {
+                const pack = projectionPackMeta.get(packId);
+                if (pack?.validation) {
+                    const packStatus = pack.validation.status || 'ok';
+                    const packLine = document.createElement('div');
+                    packLine.className = `status-line status-${packStatus}`;
+                    const packIcon = validationStatusIcon[packStatus] || '';
+                    const packLabel = validationStatusLabel[packStatus] || 'Ready';
+                    const packName = pack.name || formatLabel(pack.id);
+                    packLine.textContent = `${packIcon ? `${packIcon} ` : ''}Pack · ${packName} · ${packLabel}`;
+                    projectionScenarioStatus.appendChild(packLine);
+                }
+            }
+        }
+
+        function initializeProjectionScenarios() {
+            if (!projectionScenarioSelect || !adaptiveSDK) {
+                return;
+            }
+
+            projectionScenarioMeta.clear();
+            projectionPackMeta.clear();
+
+            projectionCatalogSnapshot = adaptiveSDK.getProjectionScenarioCatalog?.() || { packs: [], scenarios: [] };
+            const scenarios = Array.isArray(projectionCatalogSnapshot.scenarios) && projectionCatalogSnapshot.scenarios.length
+                ? projectionCatalogSnapshot.scenarios
+                : (adaptiveSDK.listProjectionScenarios?.() || []);
+            const packs = Array.isArray(projectionCatalogSnapshot.packs) ? projectionCatalogSnapshot.packs : [];
+
+            for (const pack of packs) {
+                if (pack?.id) {
+                    projectionPackMeta.set(pack.id, pack);
+                }
+            }
+
+            projectionScenarioSelect.innerHTML = '';
+            const realtimeOption = document.createElement('option');
+            realtimeOption.value = '__realtime__';
+            realtimeOption.textContent = 'Realtime Field';
+            projectionScenarioSelect.appendChild(realtimeOption);
+
+            if (scenarios.length === 0) {
+                const emptyOption = document.createElement('option');
+                emptyOption.disabled = true;
+                emptyOption.textContent = 'No catalog scenarios';
+                projectionScenarioSelect.appendChild(emptyOption);
+                projectionScenarioSelect.value = '__realtime__';
+                renderProjectionScenarioStatus('__realtime__');
+                return;
+            }
+
+            for (const scenario of scenarios) {
+                if (!scenario?.id) {
+                    continue;
+                }
+                projectionScenarioMeta.set(scenario.id, scenario);
+                const existing = adaptiveSDK.getProjectionScenario?.(scenario.id);
+                if (!existing) {
+                    adaptiveSDK.registerProjectionScenario(scenario);
+                }
+                const option = document.createElement('option');
+                option.value = scenario.id;
+                const validation = scenario.metadata?.validation;
+                const status = validation?.status || 'ok';
+                const icon = validationStatusIcon[status] || '';
+                const pack = scenario.metadata?.packId ? projectionPackMeta.get(scenario.metadata.packId) : null;
+                const packName = pack?.name || (pack?.id ? formatLabel(pack.id) : null);
+                const issueSuffix = validation?.issueCount ? ` (${validation.issueCount})` : '';
+                option.textContent = `${icon ? `${icon} ` : ''}${scenario.name || formatLabel(scenario.id)}${packName ? ` · ${packName}` : ''}${issueSuffix}`;
+                option.dataset.status = status;
+                projectionScenarioSelect.appendChild(option);
+            }
+
+            if (!projectionScenarioMeta.has(activeProjectionScenario)) {
+                activeProjectionScenario = '__realtime__';
+            }
+            projectionScenarioSelect.value = activeProjectionScenario;
+            renderProjectionScenarioStatus(activeProjectionScenario);
+
+            projectionScenarioSelect.onchange = event => {
+                activeProjectionScenario = event.target.value || '__realtime__';
+                renderProjectionScenarioStatus(activeProjectionScenario);
+                if (activeProjectionScenario === '__realtime__') {
+                    return;
+                }
+                const descriptor = projectionScenarioMeta.get(activeProjectionScenario);
+                if (!descriptor) {
+                    return;
+                }
+                adaptiveSDK.setActiveProjectionScenario(activeProjectionScenario);
+            };
+
+            if (projectionSimulateBtn) {
+                projectionSimulateBtn.onclick = () => {
+                    if (!latestBlueprint) {
+                        return;
+                    }
+                    if (activeProjectionScenario === '__realtime__') {
+                        const projectionContext = buildProjectionContextFromAdaptive(adaptiveSDK.engine?.sensoryBridge?.getSnapshot?.());
+                        const composition = adaptiveSDK.composeProjectionField(latestBlueprint, null, projectionContext);
+                        adaptiveSDK.projectionComposer.render(latestBlueprint, projectionContext);
+                        renderProjectionPanel(composition, { mode: 'realtime' });
+                        return;
+                    }
+                    const frame = adaptiveSDK.stepProjectionSimulation({});
+                    if (frame?.composition) {
+                        adaptiveSDK.projectionComposer.render(frame.blueprint, frame.context);
+                        const descriptor = projectionScenarioMeta.get(frame.id);
+                        const pack = descriptor?.metadata?.packId ? projectionPackMeta.get(descriptor.metadata.packId) : null;
+                        renderProjectionPanel(frame.composition, {
+                            mode: 'scenario',
+                            scenario: descriptor?.name || frame.name,
+                            progress: frame.progress,
+                            description: descriptor?.description || frame.description,
+                            cycleMs: descriptor?.cycleMs || frame.cycleMs,
+                            packLabel: pack?.name || null
+                        });
+                    }
+                };
+            }
+        }
+
+        function buildProjectionContextFromAdaptive(context = {}) {
+            return {
+                gazeVelocity: context?.focus?.velocity ?? context?.eyeTracking?.velocity ?? 0.35,
+                neuralCoherence: context?.intention?.confidence ?? context?.neural?.coherence ?? 0.4,
+                hapticFeedback: context?.gesture?.haptic ?? 0.32,
+                ambientVariance: context?.environment?.motion ?? 0.28,
+                gestureIntent: {
+                    intensity: context?.gesture?.intensity ?? 0.3,
+                    vector: {
+                        x: context?.gesture?.vector?.x ?? context?.focus?.x ?? 0.5,
+                        y: context?.gesture?.vector?.y ?? context?.focus?.y ?? 0.5,
+                        z: context?.gesture?.vector?.z ?? context?.focus?.depth ?? 0.4
+                    }
+                }
+            };
+        }
+
+        function renderMetricGrid(container, entries, formatter) {
+            container.innerHTML = '';
+            if (entries.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'empty-state';
+                empty.textContent = 'Awaiting attestation coverage';
+                container.appendChild(empty);
+                return;
+            }
+
+            for (const [key, data] of entries) {
+                const metric = document.createElement('div');
+                metric.className = 'metric';
+                const { primary, secondary } = formatter(key, data);
+                const label = document.createElement('span');
+                label.textContent = primary;
+                const value = document.createElement('span');
+                value.textContent = secondary;
+                metric.appendChild(label);
+                metric.appendChild(value);
+                container.appendChild(metric);
+            }
+        }
+
+        function renderCommercializationSummary(summary) {
+            if (!summary) {
+                renderMetricGrid(segmentCoverageGrid, [], () => ({ primary: '', secondary: '' }));
+                renderMetricGrid(regionCoverageGrid, [], () => ({ primary: '', secondary: '' }));
+                commercializationPackList.innerHTML = '';
+                commercializationKpiSummary.innerHTML = '';
+                snapshotList.innerHTML = '';
+                commercializationUpdated.textContent = 'No commercialization activity yet';
+                if (adaptiveSDKRef) {
+                    refreshCommercializationSnapshots();
+                }
+                return;
+            }
+
+            const segmentEntries = Object.entries(summary.segments || {});
+            renderMetricGrid(segmentCoverageGrid, segmentEntries, (segment, data) => ({
+                primary: formatLabel(segment),
+                secondary: `${data.profileCount} profiles · ${data.adoptionCount} adoptions`
+            }));
+
+            const regionEntries = Object.entries(summary.regions || {});
+            renderMetricGrid(regionCoverageGrid, regionEntries, (region, data) => ({
+                primary: formatLabel(region),
+                secondary: `${data.profileCount} profiles · ${data.adoptionCount} adoptions`
+            }));
+
+            const profileMap = new Map((summary.profiles || []).map(profile => [profile.id, profile]));
+            commercializationPackList.innerHTML = '';
+            const packs = summary.packs || [];
+            if (packs.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'empty-state';
+                empty.textContent = 'No commercialization packs registered yet';
+                commercializationPackList.appendChild(empty);
+            } else {
+                for (const pack of packs) {
+                    const card = document.createElement('div');
+                    card.className = 'pack-card';
+
+                    const headline = document.createElement('span');
+                    headline.className = 'meta-line';
+                    headline.textContent = pack.metadata?.segment ? `${formatLabel(pack.metadata.segment)} Segment` : 'Custom Pack';
+                    card.appendChild(headline);
+
+                    const title = document.createElement('h3');
+                    title.textContent = pack.name || formatLabel(pack.id);
+                    card.appendChild(title);
+
+                    if (pack.description) {
+                        const description = document.createElement('p');
+                        description.textContent = pack.description;
+                        card.appendChild(description);
+                    }
+
+                    const stats = document.createElement('p');
+                    const profileCount = Array.isArray(pack.profileIds) ? pack.profileIds.length : 0;
+                    stats.textContent = `Profiles: ${profileCount} · Adoptions: ${pack.adoptionCount}`;
+                    card.appendChild(stats);
+
+                    const defaultProfile = pack.defaultProfileId ? profileMap.get(pack.defaultProfileId) : null;
+                    const defaultLine = document.createElement('p');
+                    defaultLine.className = 'meta-line';
+                    defaultLine.textContent = defaultProfile
+                        ? `Default Profile: ${defaultProfile.name}`
+                        : 'Default Profile: None';
+                    card.appendChild(defaultLine);
+
+                    commercializationPackList.appendChild(card);
+                }
+            }
+
+            if (summary.lastUpdated) {
+                const timestamp = new Date(summary.lastUpdated);
+                commercializationUpdated.textContent = `Updated ${timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+            } else {
+                commercializationUpdated.textContent = 'No commercialization activity yet';
+            }
+
+            if (adaptiveSDKRef) {
+                refreshCommercializationSnapshots();
+            }
+        }
+
+        function renderKpiSummary(report) {
+            commercializationKpiSummary.innerHTML = '';
+            if (!report || !report.latest) {
+                const empty = document.createElement('div');
+                empty.className = 'empty-state';
+                empty.textContent = 'No KPI snapshots yet';
+                commercializationKpiSummary.appendChild(empty);
+                return;
+            }
+
+            const metrics = [
+                { label: 'Total Adoption', value: report.latest.kpis?.totalAdoption ?? 0, delta: report.deltas?.totalAdoption },
+                { label: 'Active Packs', value: report.latest.kpis?.activePacks ?? 0, delta: report.deltas?.activePacks },
+                { label: 'Active Profiles', value: report.latest.kpis?.activeProfiles ?? 0, delta: report.deltas?.activeProfiles }
+            ];
+
+            for (const metric of metrics) {
+                const item = document.createElement('div');
+                item.className = 'snapshot-item';
+
+                const title = document.createElement('strong');
+                title.textContent = metric.label;
+                item.appendChild(title);
+
+                const value = document.createElement('span');
+                value.textContent = `${metric.value}`;
+                value.style.fontSize = '1.1rem';
+                value.style.fontWeight = '600';
+                value.style.color = 'var(--accent)';
+                item.appendChild(value);
+
+                let deltaText = 'NO CHANGE VS LAST';
+                if (typeof metric.delta === 'number') {
+                    if (metric.delta > 0) {
+                        deltaText = `+${metric.delta} VS LAST SNAPSHOT`;
+                    } else if (metric.delta < 0) {
+                        deltaText = `${metric.delta} VS LAST SNAPSHOT`;
+                    }
+                }
+                const delta = document.createElement('span');
+                delta.className = 'meta-line';
+                delta.textContent = deltaText;
+                item.appendChild(delta);
+
+                commercializationKpiSummary.appendChild(item);
+            }
+        }
+
+        function renderSnapshotHistory(snapshots) {
+            snapshotList.innerHTML = '';
+            if (!snapshots || snapshots.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'empty-state';
+                empty.textContent = 'No commercialization snapshots yet';
+                snapshotList.appendChild(empty);
+                return;
+            }
+
+            for (const snapshot of snapshots) {
+                const item = document.createElement('div');
+                item.className = 'snapshot-item';
+
+                const capturedAt = document.createElement('strong');
+                const timestamp = new Date(snapshot.capturedAt);
+                capturedAt.textContent = timestamp.toLocaleString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                item.appendChild(capturedAt);
+
+                const coverage = document.createElement('span');
+                coverage.textContent = `Adoption ${snapshot.kpis?.totalAdoption ?? 0} · Packs ${snapshot.kpis?.activePacks ?? 0}/${snapshot.kpis?.totalPacks ?? 0}`;
+                item.appendChild(coverage);
+
+                const contextBits = [];
+                if (snapshot.context?.trigger) {
+                    contextBits.push(String(snapshot.context.trigger));
+                }
+                if (snapshot.context?.capturedBy) {
+                    contextBits.push(String(snapshot.context.capturedBy));
+                }
+                if (contextBits.length > 0) {
+                    const meta = document.createElement('span');
+                    meta.className = 'meta-line';
+                    meta.textContent = contextBits.join(' · ');
+                    item.appendChild(meta);
+                }
+
+                snapshotList.appendChild(item);
+            }
+        }
+
+        function refreshCommercializationSnapshots() {
+            if (!adaptiveSDKRef) {
+                commercializationKpiSummary.innerHTML = '';
+                snapshotList.innerHTML = '';
+                return;
+            }
+            const snapshots = adaptiveSDKRef.getLicenseCommercializationSnapshots({ limit: 5, withSummary: false });
+            renderSnapshotHistory(snapshots);
+            const kpiReport = adaptiveSDKRef.getLicenseCommercializationKpiReport();
+            renderKpiSummary(kpiReport);
+        }
+
+        const adaptiveSDK = (adaptiveSDKRef = createAdaptiveSDK({
+            telemetry: {
+                enabled: true,
+                defaultConsent: { analytics: false, biometric: false },
+                onConsentDecision: (snapshot, metadata) => {
+                    consentPanel?.handleConsentDecision(snapshot, metadata);
+                },
+                commercialization: {
+                    onUpdate: renderCommercializationSummary,
+                    snapshotStoreOptions: {
+                        storage: commercializationRemoteStorage,
+                        onChange: () => renderRemoteStorageStatus()
+                    },
+                    snapshotIntervalMs: 3600000
+                }
+            },
+            telemetryProviders: [complianceVaultProvider],
+            marketplaceHooks: {
+                onPatternChange: updatePatternPanel,
+                onAdaptiveUpdate: handleAdaptiveUpdate
+            }
+        }));
+
+        const {
+            engine,
+            registerLayoutAnnotation,
+            updateTelemetryConsent,
+            getTelemetryConsent,
+            getTelemetryAuditTrail,
+            getLicenseCommercializationSummary,
+            setLicenseAttestorFromProfile,
+            registerLicenseAttestationProfilePack
+        } = adaptiveSDK;
+
+        const telemetryHarness = adaptiveSDK.telemetry;
+
+        captureSnapshotBtn?.addEventListener('click', () => {
+            adaptiveSDKRef?.captureLicenseCommercializationSnapshot({
+                trigger: 'demo-manual',
+                capturedBy: 'wearable-designer'
+            });
+            refreshCommercializationSnapshots();
+        });
+
+        exportSnapshotsBtn?.addEventListener('click', () => {
+            if (!adaptiveSDKRef) return;
+            const exportPayload = adaptiveSDKRef.exportLicenseCommercializationSnapshots({
+                format: 'json',
+                includeSummary: false
+            });
+            if (!exportPayload) return;
+            const blob = new Blob([exportPayload], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `vib34d-commercialization-${Date.now()}.json`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        });
+
+        downloadBlueprintBtn?.addEventListener('click', () => {
+            if (!latestBlueprint) return;
+            const payload = JSON.stringify(latestBlueprint, null, 2);
+            const blob = new Blob([payload], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `vib34d-blueprint-${Date.now()}.json`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        });
+
+        registerLayoutAnnotation(new class extends LayoutAnnotation {
+            constructor() {
+                super({ id: 'demo-insight', priority: 5 });
+            }
+
+            shouldApply({ layout }) {
+                return layout.intensity > 0.7;
+            }
+
+            build({ layout }) {
+                return {
+                    type: 'insight',
+                    message: `High intent detected (${layout.intensity.toFixed(2)})`
+                };
+            }
+        }());
+
+        window.vib34dEngine = engine;
+        window.vib34dComplianceVault = complianceVaultProvider;
+
+        const enterprisePack = registerLicenseAttestationProfilePack('enterprise-saas', { applyDefault: true });
+        const studioPack = registerLicenseAttestationProfilePack('studio-collab', {
+            applyDefault: false,
+            collaborationId: 'aura-labs'
+        });
+
+        window.vib34dEnterprisePack = enterprisePack;
+        window.vib34dStudioPack = studioPack;
+
+        if (enterprisePack?.defaultProfileId) {
+            setLicenseAttestorFromProfile(enterprisePack.defaultProfileId);
+        }
+
+        renderCommercializationSummary(getLicenseCommercializationSummary());
+        refreshCommercializationSnapshots();
+
+        const snapshotStore = adaptiveSDKRef.getLicenseCommercializationSnapshotStore?.();
+        snapshotStore?.whenReady?.().then(() => {
+            refreshCommercializationSnapshots();
+            renderRemoteStorageStatus();
+        });
+
+        if (typeof adaptiveSDKRef?.startLicenseCommercializationSnapshotSchedule === 'function') {
+            stopSnapshotSchedule = adaptiveSDKRef.startLicenseCommercializationSnapshotSchedule(60000, {
+                trigger: 'demo-schedule',
+                capturedBy: 'wearable-designer'
+            }) || null;
+        }
+
+        window.addEventListener('beforeunload', () => {
+            if (typeof stopSnapshotSchedule === 'function') {
+                stopSnapshotSchedule();
+            }
+        });
+
+        const variationSlider = document.getElementById('variationSlider');
+        const randomizeBtn = document.getElementById('randomizeBtn');
+        const variationLabel = document.getElementById('variationLabel');
+        const focusMetric = document.getElementById('focusMetric');
+        const engagementMetric = document.getElementById('engagementMetric');
+        const velocityMetric = document.getElementById('velocityMetric');
+        const stressMetric = document.getElementById('stressMetric');
+        const consentPanelContainer = document.getElementById('telemetryConsentPanel');
+
+        consentPanel = createConsentPanel({
+            container: consentPanelContainer,
+            consentOptions: [
+                {
+                    classification: 'system',
+                    title: 'System Diagnostics',
+                    description: 'Required for runtime health and adapter lifecycle.'
+                },
+                {
+                    classification: 'compliance',
+                    title: 'Compliance & Audit',
+                    description: 'Records schema issues and consent changes.'
+                },
+                {
+                    classification: 'interaction',
+                    title: 'Interaction Feedback',
+                    description: 'Tracks gestures and adaptive layout reactions.'
+                },
+                {
+                    classification: 'analytics',
+                    title: 'Analytics',
+                    description: 'Enables aggregated layout performance telemetry.'
+                },
+                {
+                    classification: 'biometric',
+                    title: 'Biometric Streams',
+                    description: 'Includes heart rate and stress telemetry.'
+                }
+            ],
+            getTelemetryConsent,
+            getComplianceRecords: () => complianceVaultProvider.getRecords(),
+            getTelemetryAuditTrail,
+            refreshInterval: 6000,
+            downloadFileNamePrefix: 'vib34d-compliance-log',
+            onConsentToggle: (classification, enabled) => {
+                updateTelemetryConsent({ [classification]: enabled }, { source: 'wearable-designer-ui' });
+            },
+            trackConsentToggle: (classification, enabled) => {
+                telemetryHarness.track('privacy.consent.ui_toggle', { classification, enabled }, { classification: 'compliance' });
+            }
+        }).mount();
+
+        variationSlider.addEventListener('input', (event) => {
+            const value = Number(event.target.value);
+            engine.setVariation(value);
+            variationLabel.textContent = `${value + 1} - ${engine.variationManager.getVariationName(value)}`;
+        });
+
+        randomizeBtn.addEventListener('click', () => {
+            engine.randomVariation();
+            variationSlider.value = engine.currentVariation;
+            variationLabel.textContent = `${engine.currentVariation + 1} - ${engine.variationManager.getVariationName(engine.currentVariation)}`;
+        });
+
+        function updatePatternPanel(spec) {
+            document.getElementById('patternTier').textContent = spec.monetization.tier.toUpperCase();
+            document.getElementById('patternName').textContent = spec.pattern?.name || 'Adaptive Pattern';
+            document.getElementById('patternDescription').textContent = spec.pattern?.description || 'Dynamic mapping ready for commercialization.';
+            document.getElementById('integrationTag').textContent = `Figma: ${spec.integration.figmaPlugin}`;
+        }
+
+        function handleAdaptiveUpdate({ context, layout, design }) {
+            focusMetric.textContent = context.focusVector.x.toFixed(2);
+            engagementMetric.textContent = context.engagementLevel.toFixed(2);
+            velocityMetric.textContent = layout.motion.velocity.toFixed(2);
+            stressMetric.textContent = context.biometricStress.toFixed(2);
+
+            blueprintRenderer.render(layout, design, context);
+            latestBlueprint = buildLayoutBlueprint(layout, design, context);
+            renderBlueprintPanel(latestBlueprint);
+
+            const projectionContext = buildProjectionContextFromAdaptive(context);
+            const projectionComposition = adaptiveSDK.composeProjectionField(layout, design, projectionContext);
+            if (projectionComposition) {
+                adaptiveSDK.projectionComposer.render(projectionComposition.blueprint, projectionContext);
+                if (activeProjectionScenario === '__realtime__') {
+                    renderProjectionPanel(projectionComposition, { mode: 'realtime' });
+                }
+            }
+        }
+
+        document.addEventListener('pointermove', event => {
+            const x = event.clientX / window.innerWidth;
+            const y = event.clientY / window.innerHeight;
+            engine.sensoryBridge.ingest('eye-tracking', { x, y, depth: 0.25 + 0.15 * Math.sin(x * Math.PI) }, 0.9);
+            engine.sensoryBridge.ingest('neural-intent', { x: (x - 0.5) * 0.8, y: (0.5 - y) * 0.8, engagement: 0.5 + (0.5 - Math.abs(0.5 - x)) * 0.3 }, 0.7);
+        });
+
+        setInterval(() => {
+            const stress = 0.15 + Math.random() * 0.15;
+            engine.sensoryBridge.ingest('biometric', { stress, heartRate: 70 + Math.random() * 6 }, 0.6);
+            engine.sensoryBridge.ingest('ambient', { luminance: 0.4 + Math.random() * 0.2, motion: Math.random() * 0.3 }, 0.5);
+        }, 2400);
+    </script>
+</body>
+</html>
