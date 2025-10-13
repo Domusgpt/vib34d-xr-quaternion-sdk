@@ -63,6 +63,9 @@ export class QuantumHolographicVisualizer {
             intensity: 0.5,
             saturation: 0.8,
             dimension: 3.5,
+            rot4dXY: 0.0,
+            rot4dXZ: 0.0,
+            rot4dYZ: 0.0,
             rot4dXW: 0.0,
             rot4dYW: 0.0,
             rot4dZW: 0.0
@@ -243,6 +246,9 @@ uniform float u_hue;
 uniform float u_intensity;
 uniform float u_saturation;
 uniform float u_dimension;
+uniform float u_rot4dXY;
+uniform float u_rot4dXZ;
+uniform float u_rot4dYZ;
 uniform float u_rot4dXW;
 uniform float u_rot4dYW;
 uniform float u_rot4dZW;
@@ -251,6 +257,33 @@ uniform float u_clickIntensity;
 uniform float u_roleIntensity;
 
 // 4D rotation matrices
+mat4 rotateXY(float theta) {
+    float c = cos(theta);
+    float s = sin(theta);
+    return mat4(c, -s, 0.0, 0.0,
+                s,  c, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0);
+}
+
+mat4 rotateXZ(float theta) {
+    float c = cos(theta);
+    float s = sin(theta);
+    return mat4(c, 0.0, -s, 0.0,
+                0.0, 1.0, 0.0, 0.0,
+                s, 0.0,  c, 0.0,
+                0.0, 0.0, 0.0, 1.0);
+}
+
+mat4 rotateYZ(float theta) {
+    float c = cos(theta);
+    float s = sin(theta);
+    return mat4(1.0, 0.0, 0.0, 0.0,
+                0.0, c, -s, 0.0,
+                0.0, s,  c, 0.0,
+                0.0, 0.0, 0.0, 1.0);
+}
+
 mat4 rotateXW(float theta) {
     float c = cos(theta);
     float s = sin(theta);
@@ -272,6 +305,99 @@ mat4 rotateZW(float theta) {
 vec3 project4Dto3D(vec4 p) {
     float w = 2.5 / (2.5 + p.w);
     return vec3(p.x * w, p.y * w, p.z * w);
+}
+
+vec4 applyInteractiveRotation(vec4 pos, vec2 mouseDelta) {
+    float timeFactor = u_time * 0.0001 * u_speed;
+
+    pos = rotateXY(u_rot4dXY + timeFactor * 0.17 + mouseDelta.x * 0.6) * pos;
+    pos = rotateXZ(u_rot4dXZ + timeFactor * 0.13 + mouseDelta.y * 0.6) * pos;
+    pos = rotateYZ(u_rot4dYZ + timeFactor * 0.1 + u_clickIntensity * 0.25) * pos;
+    pos = rotateXW(u_rot4dXW + timeFactor * 0.18 + mouseDelta.y * 0.7) * pos;
+    pos = rotateYW(u_rot4dYW + timeFactor * 0.15 + mouseDelta.x * 0.7) * pos;
+    pos = rotateZW(u_rot4dZW + timeFactor * 0.22 + u_clickIntensity * 0.35) * pos;
+    return pos;
+}
+
+vec3 warpHypersphereCore(vec3 p, int geometryIndex, vec2 mouseDelta) {
+    float radius = length(p);
+    float morphBlend = clamp(u_morphFactor * 0.6 + (u_dimension - 3.0) * 0.25, 0.0, 2.0);
+    float w = sin(radius * (1.3 + float(geometryIndex) * 0.12) + u_time * 0.0008 * u_speed);
+    w *= (0.4 + morphBlend * 0.45);
+
+    vec4 p4d = vec4(p * (1.0 + morphBlend * 0.2), w);
+    p4d = applyInteractiveRotation(p4d, mouseDelta);
+    vec3 projected = project4Dto3D(p4d);
+
+    return mix(p, projected, clamp(0.45 + morphBlend * 0.35, 0.0, 1.0));
+}
+
+vec3 warpHypertetraCore(vec3 p, int geometryIndex, vec2 mouseDelta) {
+    vec3 c1 = normalize(vec3(1.0, 1.0, 1.0));
+    vec3 c2 = normalize(vec3(-1.0, -1.0, 1.0));
+    vec3 c3 = normalize(vec3(-1.0, 1.0, -1.0));
+    vec3 c4 = normalize(vec3(1.0, -1.0, -1.0));
+
+    float morphBlend = clamp(u_morphFactor * 0.8 + (u_dimension - 3.0) * 0.2, 0.0, 2.0);
+    float basisMix = dot(p, c1) * 0.14 + dot(p, c2) * 0.1 + dot(p, c3) * 0.08;
+    float w = sin(basisMix * 5.5 + u_time * 0.0009 * u_speed);
+    w *= cos(dot(p, c4) * 4.2 - u_time * 0.0007 * u_speed);
+    w *= (0.5 + morphBlend * 0.4);
+
+    vec3 offset = vec3(dot(p, c1), dot(p, c2), dot(p, c3)) * 0.1 * morphBlend;
+    vec4 p4d = vec4(p + offset, w);
+    p4d = applyInteractiveRotation(p4d, mouseDelta);
+    vec3 projected = project4Dto3D(p4d);
+
+    float planeInfluence = min(min(abs(dot(p, c1)), abs(dot(p, c2))), min(abs(dot(p, c3)), abs(dot(p, c4))));
+    vec3 blended = mix(p, projected, clamp(0.45 + morphBlend * 0.35, 0.0, 1.0));
+    return mix(blended, blended * (1.0 - planeInfluence * 0.55), 0.2 + morphBlend * 0.2);
+}
+
+vec3 applyCoreWarp(vec3 p, float geometryType, vec2 mouseDelta) {
+    float totalBase = 8.0;
+    float coreFloat = floor(geometryType / totalBase);
+    int coreIndex = int(clamp(coreFloat, 0.0, 2.0));
+    float baseGeomFloat = mod(geometryType, totalBase);
+    int geometryIndex = int(clamp(floor(baseGeomFloat + 0.5), 0.0, totalBase - 1.0));
+
+    if (coreIndex == 1) {
+        return warpHypersphereCore(p, geometryIndex, mouseDelta);
+    }
+    if (coreIndex == 2) {
+        return warpHypertetraCore(p, geometryIndex, mouseDelta);
+    }
+    return p;
+}
+
+float evaluateGeometry(vec3 p, int geomType, float gridSize) {
+    if (geomType == 0) {
+        return tetrahedronLattice(p, gridSize);
+    }
+    else if (geomType == 1) {
+        return hypercubeLattice(p, gridSize);
+    }
+    else if (geomType == 2) {
+        return sphereLattice(p, gridSize);
+    }
+    else if (geomType == 3) {
+        return torusLattice(p, gridSize);
+    }
+    else if (geomType == 4) {
+        return kleinLattice(p, gridSize);
+    }
+    else if (geomType == 5) {
+        return fractalLattice(p, gridSize);
+    }
+    else if (geomType == 6) {
+        return waveLattice(p, gridSize);
+    }
+    else if (geomType == 7) {
+        return crystalLattice(p, gridSize);
+    }
+    else {
+        return hypercubeLattice(p, gridSize);
+    }
 }
 
 // Complex 3D Lattice Functions - Superior Quantum Shaders
@@ -391,38 +517,13 @@ float crystalLattice(vec3 p, float gridSize) {
 }
 
 // Enhanced geometry function with holographic effects
-float geometryFunction(vec4 p) {
-    int geomType = int(u_geometry);
-    vec3 p3d = project4Dto3D(p);
+float geometryFunction(vec3 basePoint, float geometryType, vec2 mouseDelta) {
+    float totalBase = 8.0;
+    float baseGeomFloat = mod(geometryType, totalBase);
+    int geomType = int(clamp(floor(baseGeomFloat + 0.5), 0.0, totalBase - 1.0));
+    vec3 warped = applyCoreWarp(basePoint, geometryType, mouseDelta);
     float gridSize = u_gridDensity * 0.08;
-    
-    if (geomType == 0) {
-        return tetrahedronLattice(p3d, gridSize) * u_morphFactor;
-    }
-    else if (geomType == 1) {
-        return hypercubeLattice(p3d, gridSize) * u_morphFactor;
-    }
-    else if (geomType == 2) {
-        return sphereLattice(p3d, gridSize) * u_morphFactor;
-    }
-    else if (geomType == 3) {
-        return torusLattice(p3d, gridSize) * u_morphFactor;
-    }
-    else if (geomType == 4) {
-        return kleinLattice(p3d, gridSize) * u_morphFactor;
-    }
-    else if (geomType == 5) {
-        return fractalLattice(p3d, gridSize) * u_morphFactor;
-    }
-    else if (geomType == 6) {
-        return waveLattice(p3d, gridSize) * u_morphFactor;
-    }
-    else if (geomType == 7) {
-        return crystalLattice(p3d, gridSize) * u_morphFactor;
-    }
-    else {
-        return hypercubeLattice(p3d, gridSize) * u_morphFactor;
-    }
+    return evaluateGeometry(warped, geomType, gridSize) * u_morphFactor;
 }
 
 // EXTREME LAYER-BY-LAYER COLOR SYSTEM
@@ -519,15 +620,15 @@ void main() {
     // Enhanced 4D position with holographic depth
     float timeSpeed = u_time * 0.0001 * u_speed;
     vec4 pos = vec4(uv * 3.0, sin(timeSpeed * 3.0), cos(timeSpeed * 2.0));
-    pos.xy += (u_mouse - 0.5) * u_mouseIntensity * 2.0;
-    
-    // Apply 4D rotations
-    pos = rotateXW(u_rot4dXW) * pos;
-    pos = rotateYW(u_rot4dYW) * pos;
-    pos = rotateZW(u_rot4dZW) * pos;
-    
+    vec2 mouseDelta = (u_mouse - 0.5) * u_mouseIntensity * 2.0;
+    pos.xy += mouseDelta;
+
+    // Apply full 6D rotation set
+    pos = applyInteractiveRotation(pos, mouseDelta);
+
     // Calculate enhanced geometry value
-    float value = geometryFunction(pos);
+    vec3 projectedPoint = project4Dto3D(pos);
+    float value = geometryFunction(projectedPoint, u_geometry, mouseDelta);
     
     // Enhanced chaos with holographic effects
     float noise = sin(pos.x * 7.0) * cos(pos.y * 11.0) * sin(pos.z * 13.0);
@@ -653,6 +754,9 @@ void main() {
             intensity: this.gl.getUniformLocation(this.program, 'u_intensity'),
             saturation: this.gl.getUniformLocation(this.program, 'u_saturation'),
             dimension: this.gl.getUniformLocation(this.program, 'u_dimension'),
+            rot4dXY: this.gl.getUniformLocation(this.program, 'u_rot4dXY'),
+            rot4dXZ: this.gl.getUniformLocation(this.program, 'u_rot4dXZ'),
+            rot4dYZ: this.gl.getUniformLocation(this.program, 'u_rot4dYZ'),
             rot4dXW: this.gl.getUniformLocation(this.program, 'u_rot4dXW'),
             rot4dYW: this.gl.getUniformLocation(this.program, 'u_rot4dYW'),
             rot4dZW: this.gl.getUniformLocation(this.program, 'u_rot4dZW'),
@@ -835,9 +939,9 @@ void main() {
     /**
      * Update visualization parameters with immediate GPU sync
      */
-    updateParameters(params) {
+    updateParameters(params, context = {}) {
         this.params = { ...this.params, ...params };
-        
+
         // Don't call render() here - engine will call it to prevent infinite loop
     }
     
@@ -890,7 +994,8 @@ void main() {
         this.gl.uniform2f(this.uniforms.resolution, this.canvas.width, this.canvas.height);
         this.gl.uniform1f(this.uniforms.time, time);
         this.gl.uniform2f(this.uniforms.mouse, this.mouseX, this.mouseY);
-        this.gl.uniform1f(this.uniforms.geometry, this.params.geometry);
+        const encodedGeometry = Number.isFinite(this.params.geometry) ? this.params.geometry : 0;
+        this.gl.uniform1f(this.uniforms.geometry, Math.max(0, encodedGeometry));
         // 🎵 QUANTUM AUDIO REACTIVITY - Direct and effective
         let gridDensity = this.params.gridDensity;
         let morphFactor = this.params.morphFactor;
@@ -919,6 +1024,9 @@ void main() {
         this.gl.uniform1f(this.uniforms.intensity, this.params.intensity);
         this.gl.uniform1f(this.uniforms.saturation, this.params.saturation);
         this.gl.uniform1f(this.uniforms.dimension, this.params.dimension);
+        this.gl.uniform1f(this.uniforms.rot4dXY, this.params.rot4dXY);
+        this.gl.uniform1f(this.uniforms.rot4dXZ, this.params.rot4dXZ);
+        this.gl.uniform1f(this.uniforms.rot4dYZ, this.params.rot4dYZ);
         this.gl.uniform1f(this.uniforms.rot4dXW, this.params.rot4dXW);
         this.gl.uniform1f(this.uniforms.rot4dYW, this.params.rot4dYW);
         this.gl.uniform1f(this.uniforms.rot4dZW, this.params.rot4dZW);

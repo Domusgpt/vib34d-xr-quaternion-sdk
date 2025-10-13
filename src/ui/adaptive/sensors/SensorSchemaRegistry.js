@@ -1,3 +1,5 @@
+import { normalizeXRPosePayload } from './xr/XRPoseNormalizer.js';
+
 /**
  * SensorSchemaRegistry
  * ------------------------------------------------------------
@@ -735,11 +737,35 @@ export class SensorSchemaRegistry {
 
     registerSpatialSchemas() {
         this.register('spatial.pose', {
-            normalize: payload => ({
-                payload: this.ensurePose(payload, { field: 'pose' }),
-                issues: []
-            }),
-            fallback: { position: { x: 0, y: 0, z: 0 }, orientation: { x: 0, y: 0, z: 0, w: 1 } }
+            normalize: payload => {
+                const { pose, issues } = normalizeXRPosePayload(payload, { registry: this });
+                const normalized = {
+                    position: pose.position,
+                    orientation: pose.orientation,
+                    linearVelocity: pose.linearVelocity ?? null,
+                    angularVelocity: pose.angularVelocity ?? null,
+                    referenceSpaceType: pose.referenceSpaceType ?? 'local',
+                    referenceSpaceId: pose.referenceSpaceId ?? null,
+                    emulatedPosition: typeof pose.emulatedPosition === 'boolean' ? pose.emulatedPosition : null,
+                    trackingState: pose.trackingState ?? 'unknown',
+                    radius: pose.radius ?? null,
+                    confidence: Number.isFinite(pose.confidence) ? Math.max(0, Math.min(1, pose.confidence)) : undefined
+                };
+
+                return { payload: normalized, issues };
+            },
+            fallback: {
+                position: { x: 0, y: 0, z: 0 },
+                orientation: { x: 0, y: 0, z: 0, w: 1 },
+                linearVelocity: null,
+                angularVelocity: null,
+                referenceSpaceType: 'local',
+                referenceSpaceId: null,
+                emulatedPosition: null,
+                trackingState: 'unknown',
+                radius: null,
+                confidence: 1
+            }
         });
 
         this.register('spatial.space-reference', {

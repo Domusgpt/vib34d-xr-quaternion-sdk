@@ -117,6 +117,9 @@ ShaderQuaternionSynchronizer.updateUniforms(quaternion);
 ### 4D Rotation Control
 
 All visualization systems share quaternion-driven 4D rotation:
+- `rot4dXY` - Rotation in XY plane
+- `rot4dXZ` - Rotation in XZ plane
+- `rot4dYZ` - Rotation in YZ plane
 - `rot4dXW` - Rotation in XW plane
 - `rot4dYW` - Rotation in YW plane
 - `rot4dZW` - Rotation in ZW plane
@@ -130,6 +133,8 @@ See `DOCS/` directory for complete technical documentation:
 **Core Integration Guides:**
 - `QUATERNIONS_IN_XR.md` - XR quaternion mathematics and OpenXR/WebXR integration
 - `QUATERNION_VISUALIZER_AND_XR_LOCALIZATION_RESEARCH.md` - Research and implementation details
+- `XR_SCHEMA_GUIDE.md` - WebXR/OpenXR pose normalization and confidence derivation reference
+- `VISUALIZATION_PARAMETER_CONTRACT.md` - Shared interface for faceted, quantum, and holographic systems
 - `ADAPTIVE_SDK_DEVELOPER_HANDOFF_GUIDE.md` - Complete developer handoff guide
 
 **Technical References:**
@@ -154,6 +159,24 @@ This SDK is designed for integration into XR applications that need:
 - GPU-optimized quaternion-to-matrix conversion
 
 See `DOCS/ADAPTIVE_SDK_DEVELOPER_HANDOFF_GUIDE.md` for complete integration instructions.
+
+## 🛠️ Environment & Development Track
+
+For a step-by-step environment checklist, recommended XR tooling, and the phased
+refactoring plan that centralizes quaternion handling across the faceted,
+quantum, and holographic systems, review
+`DOCS/ENVIRONMENT_AND_DEVELOPMENT_TRACK.md`.
+
+### Quickstart Setup
+
+```bash
+nvm use
+npm run setup
+```
+
+The setup script enforces the Node.js version declared in `.nvmrc`, hydrates npm
+dependencies when needed, and prints the immediate follow-up steps from the
+development track guide.
 
 ## 🌟 Key Technologies
 

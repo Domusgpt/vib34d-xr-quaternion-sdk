@@ -6,9 +6,9 @@
 
 export class GeometryLibrary {
     static getGeometryNames() {
-        return [
+        const baseGeometries = [
             'TETRAHEDRON',
-            'HYPERCUBE', 
+            'HYPERCUBE',
             'SPHERE',
             'TORUS',
             'KLEIN BOTTLE',
@@ -16,6 +16,11 @@ export class GeometryLibrary {
             'WAVE',
             'CRYSTAL'
         ];
+
+        const hypersphere = baseGeometries.map(name => `${name} • HYPERSPHERE CORE`);
+        const hypertetra = baseGeometries.map(name => `${name} • HYPERTETRA CORE`);
+
+        return [...baseGeometries, ...hypersphere, ...hypertetra];
     }
     
     static getGeometryName(type) {
@@ -27,16 +32,20 @@ export class GeometryLibrary {
      * Get variation parameters for specific geometry and level
      */
     static getVariationParameters(geometryType, level) {
+        const baseCount = 8;
+        const baseType = ((geometryType % baseCount) + baseCount) % baseCount;
+        const coreType = Math.floor(geometryType / baseCount);
+
         const baseParams = {
             gridDensity: 8 + (level * 4),
             morphFactor: 0.5 + (level * 0.3),
             chaos: level * 0.15,
             speed: 0.8 + (level * 0.2),
-            hue: (geometryType * 45 + level * 15) % 360
+            hue: (baseType * 45 + level * 15) % 360
         };
-        
+
         // Geometry-specific adjustments
-        switch (geometryType) {
+        switch (baseType) {
             case 0: // Tetrahedron
                 baseParams.gridDensity *= 1.2;
                 break;
@@ -66,7 +75,20 @@ export class GeometryLibrary {
                 baseParams.morphFactor *= 0.6;
                 break;
         }
-        
+
+        // Core-specific adjustments (0 = legacy hypercube, 1 = hypersphere, 2 = hypertetra)
+        if (coreType === 1) {
+            baseParams.gridDensity *= 1.1;
+            baseParams.morphFactor *= 1.25;
+            baseParams.chaos *= 1.2;
+            baseParams.speed *= 0.95;
+        } else if (coreType === 2) {
+            baseParams.gridDensity *= 0.95;
+            baseParams.morphFactor *= 1.35;
+            baseParams.chaos *= 1.15;
+            baseParams.speed *= 1.1;
+        }
+
         return baseParams;
     }
 }
