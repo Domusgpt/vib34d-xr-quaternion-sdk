@@ -98,15 +98,19 @@ This guide consolidates the environment preparation, tooling, and phased develop
 - Stand up Vite dev server + Storybook (optional) for shader previews.
 
 ### Phase 1 — Quaternion Core Extraction (Week 1-3)
-- Refactor current quaternion helpers into shared math package with unit tests (Vitest + Jest snapshot for rotor matrices).
-- Implement JSON schema for XR pose payloads (head, controllers, hands) with validation.
-- Provide conversion utilities (Quaternion ↔ matrix ↔ rotor) and add benchmarks.
+- ✅ Refactor current quaternion helpers into shared math package with unit tests (Vitest + Jest snapshot for rotor matrices).
+- ✅ Implement JSON schema for XR pose payloads (head, controllers, hands) with validation.
+- ✅ Provide conversion utilities (Quaternion ↔ matrix ↔ rotor) and add benchmarks.
+- 🔄 Wire `ShaderQuaternionSynchronizer` to shared quaternion math + pose registry primitives and expand test harness coverage.
 
 ### Phase 2 — WebXR/WebGPU Integration (Week 3-6)
-- Build WebGPU compute pipeline for 4D preprocessing (WGSL generated from math core).
-- Integrate React Three Fiber layer (or custom renderer) with `useXR()` bridge feeding shader uniforms.
-- Add UBO/SSBO management with std140/std430 layouts and instancing for polytopes.
-- Ship developer sandbox page for runtime parameter tweaking.
+- ✅ Document WebGPU migration architecture and land the `MultiLayerGlassComposer` + `TripleBufferedUniform` scaffolding for the glassmorphic renderer.
+- ✅ Build WebGPU compute pipeline for 4D preprocessing (WGSL generated from math core) via `QuaternionRotorCompute`, including CPU parity helpers for non-WebGPU environments.
+- ✅ Integrate React Three Fiber layer (or custom renderer) with `useXR()` bridge feeding shader uniforms via the new `WebXRQuaternionBridge` that streams viewer poses, rotor math, and audio bands into the glass composer.
+- ✅ Introduce a shared `GlassUniformController` that ingests localization snapshots, performs rotor fusion smoothing, and writes glass uniforms so the preview harness and future WebXR session code share one orchestration layer.
+- ✅ Add UBO/SSBO management with std140/std430 layouts and instancing for polytopes via the shared `BufferLayout` helpers and `PolytopeInstanceBuffer` storage manager.
+- ✅ Ship developer sandbox page for runtime parameter tweaking (WebGPU preview harness with quaternion sliders feeding the composer).
+- ✅ Port the hypersphere/hypertetrahedron lattice shader suite to WGSL with the reusable `GlassShaderLibrary`, keeping WebGPU layer pipelines in lockstep with the legacy WebGL preview.
 
 ### Phase 3 — Unity XR Pipeline (Week 6-10)
 - Create Unity package referencing math core via shared artifacts (e.g., `Packages/com.vib3.quaternion`).
@@ -160,6 +164,82 @@ This guide consolidates the environment preparation, tooling, and phased develop
 - Update `DOCS/3-DEVELOPER-GUIDE.md` to reference this setup guide and link shader math core docs.
 - Add `docs/platform-playbooks/` directory with per-platform deployment steps.
 - Produce video walkthroughs for environment bring-up (web + Quest + visionOS).
+
+---
+
+## 9. Localization Quaternion Fabric
+
+To keep quaternion localization consistent across heterogeneous XR runtimes we introduce a **Localization Quaternion Fabric (LQF)**—a lightweight service mesh that binds shared math primitives with platform-aware localization adapters.
+
+### 9.1 Fabric Principles
+
+- **Quaternion Provenance Channels** — every quaternion entering the fabric is tagged with its origin (sensor, SLAM, shared anchor) and localization space. This metadata travels with the quaternion buffer so late-latching, replay, or prediction never loses context.
+- **Dual-Space Synchronization** — maintain paired dual quaternions representing local pose (device → world) and global anchor (world → shared stage) so localization layers can mix-and-match depending on platform capabilities.
+- **Rotational Confidence Heuristics** — compute angular velocity variance, jitter, and drift coefficients which are later used to weight rotor contributions when driving visualizers or physics.
+
+### 9.2 Fabric Components
+
+| Component | Responsibility | Implementation Notes |
+| --- | --- | --- |
+| `LocalizationBridge` | Normalizes incoming localization frames (ARKit, OpenXR Stage, Spatial Anchors) and produces paired dual quaternions. | Lives beside `SensorSchemaRegistry`, reuses math core conversions. |
+| `QuaternionFabricRouter` | Manages provenance channels, double-buffering, and priority arbitration for late frames. | Implement as lightweight event emitter with time-sorted queues (JS) and `NativeQueue` (Unity/Swift). |
+| `RotorFusionService` | Composes localized dual quaternions with 4D rotor weights to drive adaptive visualizers. | Reuses `4D rotor composer` pipeline; adds weighting matrix derived from localization confidence. |
+| `SpatialConsensusModule` | Performs multi-user localization reconciliation (shared anchors, world-locking). | For web, leverage WebRTC DataChannel; on Unity, wrap Photon/Netcode for GameObjects. |
+
+### 9.3 Localization Code Generation
+
+- Add `tools/codegen/localization-quaternions.ts` that reads schema definitions and emits:
+  - TypeScript bindings with discriminated unions for localization sources.
+  - WGSL structs with matching layout for GPU-friendly localization buffers.
+  - C#/Swift extensions mapping to `Unity.Mathematics.quaternion` / `simd_quatf`.
+- Integrate the codegen step into `pnpm build:web` and the Unity package pre-build hook so localization math stays in sync.
+
+---
+
+## 10. Dynamic Emergent Utility Track
+
+The fabric unlocks emergent behaviors by letting visualization and systems layers subscribe to localization-aware quaternion streams.
+
+### 10.1 Adaptive Experience Layers
+
+1. **Spatial Story Graph** — maintain graph of anchors, rotors, and triggers. Graph traversal decides which subsystem (faceted, quantum, holographic) should respond to pose deltas.
+2. **Procedural Interaction Seeds** — use localization confidence and drift metrics to spawn adaptive shaders or audio cues when tracking changes (e.g., blend holographic trails when drift exceeds threshold).
+3. **Predictive Rotor Caching** — GPU prefetch of rotor states based on motion prediction, minimizing stalls when users rapidly re-localize between rooms.
+
+### 10.2 Emergent Scenario Templates
+
+- **Shared Stage Co-Creation** — combine multiple user rotors via `SpatialConsensusModule`; orchestrate collective geometry manipulation when localization agreement passes confidence threshold.
+- **Localization Failure Graceful Degradation** — if localization confidence drops, automatically blend to procedural 4D abstractions while sensors recover, avoiding jarring snaps.
+- **Dynamic Anchor-Informed Audio** — map anchor stability to quantum engine audio modulation so scenes feel grounded or fluid depending on localization certainty.
+
+---
+
+## 11. Implementation Milestones (Week 20-28)
+
+1. **Week 20-22 — Fabric Scaffolding**
+   - ✅ Implement `LocalizationBridge` with ARKit/OpenXR adapters and hook into existing sensor registry via the localization fabric modules.【F:src/ui/adaptive/localization/LocalizationBridge.ts†L1-L323】
+   - ✅ Establish provenance tagging schema and write Vitest suites validating serialization/deserialization for stage/anchor snapshots.【F:tests/localizationFabric.test.ts†L1-L97】
+2. **Week 22-24 — Rotor Fusion & Confidence Metrics**
+   - ✅ Ship `RotorFusionService`, generating 4D rotor weights informed by localization statistics and feeding the WebGPU bridge’s rotor override path.【F:src/ui/adaptive/localization/RotorFusionService.ts†L1-L140】【F:src/dev/webgpuPreviewHarness.ts†L662-L742】
+   - ✅ Add GPU integration path (WGSL/Unity compute) for localization buffers, ensuring synchronization with shader uniform layouts and the preview harness risk surface.【F:src/ui/adaptive/renderers/webgpu/BufferLayout.ts†L200-L245】【F:src/ui/adaptive/renderers/webgpu/WebXRQuaternionBridge.ts†L17-L239】
+3. **Week 24-26 — Emergent Layer Enablement**
+   - Build spatial story graph service with plug-in triggers for visualizer subsystems.
+   - Prototype predictive rotor caching using Kalman-filtered quaternion extrapolation.
+4. **Week 26-28 — Multi-User & QA**
+   - Integrate `SpatialConsensusModule` with networking layer; run multi-user localization soak tests.
+   - Expand QA harness to include localization drift simulations and automated failover validation.
+
+---
+
+## 12. Documentation & Developer Experience Enhancements
+
+- Produce localization quaternion primer in `DOCS/QUATERNIONS_IN_XR.md` linking to the fabric design, including sample code for provenance tagging.
+- ✅ Update developer sandbox with live localization confidence overlays and rotor fusion metrics surfaced in the WebGPU preview harness risk panel.【F:src/dev/webgpuPreviewHarness.ts†L598-L742】
+- Record guided walkthrough showing how emergent scenarios respond to localization shifts across WebXR, Unity, and visionOS builds.
+
+---
+
+By extending the development track with the Localization Quaternion Fabric and emergent utility layers, the SDK gains a novel architecture that keeps localization data coherent while enabling dynamic experiences across XR platforms.
 
 ---
 
