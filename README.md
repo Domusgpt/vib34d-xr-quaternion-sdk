@@ -15,6 +15,7 @@ A focused SDK extracting VIB34D's quaternion mathematics and XR sensor integrati
 - **Sensor Schema Registry**: Normalizes quaternion data from XR devices
 - **AR Visor Adapter**: Processes spatial tracking and pose data
 - **Shader Quaternion Synchronizer**: GPU-ready quaternion-to-matrix conversion
+- **WebGPU Glassmorphic Pipeline**: Multi-pass renderer with triple-buffered uniforms, render-bundle execution, and resizable blur layers for Quest/Vision Pro targets
 - **Sensory Input Bridge**: Centralizes XR sensor routing
 
 ### Visualization Engines
@@ -112,7 +113,18 @@ SensoryInputBridge.distributeQuaternionChannels(data);
 
 // 4. Shader Synchronizer - GPU updates
 ShaderQuaternionSynchronizer.updateUniforms(quaternion);
+
+// 5. WebGPU Pipeline - Triple-buffered uniform uploads and multi-pass rendering
+glassmorphicPipeline.updatePose({ position, orientation });
+glassmorphicPipeline.render(commandEncoder, finalTargetView);
 ```
+
+#### WebGPU Glassmorphic Pipeline Controls
+
+- **Pass Configuration**: `setLayerPipeline`, `setBlurPipeline`, and `setCompositePipeline` bind layer-specific render pipelines while `set*Bundle` variants execute pre-recorded render bundles for repeated work.
+- **Uniform Ring Sharing**: Inject custom triple-buffer instances via the `uniformRingFactory` option to integrate external buffering strategies.
+- **Dynamic Layouts**: `resize({ width, height })` rebuilds HDR layer and blur targets while preserving bind factories, and `dispose()` tears down GPU textures for session hand-off.
+- **Quaternion Core Integration**: `updatePose` performs shared-core quaternion smoothing, matrix conversion, and 4D rotation derivation before pushing uniforms to WebGPU.
 
 ### 4D Rotation Control
 
