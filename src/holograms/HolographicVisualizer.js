@@ -1,3 +1,10 @@
+import {
+    HOLOGRAPHIC_CORE_TYPES,
+    HOLOGRAPHIC_VARIANT_CORE_MAP,
+    HOLOGRAPHIC_VARIANT_GEOMETRY_MAP,
+    HOLOGRAPHIC_VARIANT_NAMES
+} from './variantRegistry.js';
+
 /**
  * Core Holographic Visualizer - Clean WebGL rendering engine
  * Extracted from working system, no debugging mess
@@ -85,28 +92,15 @@ export class HolographicVisualizer {
     
     generateVariantParams(variant) {
         const vib3Geometries = [
-            'TETRAHEDRON', 'HYPERCUBE', 'SPHERE', 'TORUS', 
+            'TETRAHEDRON', 'HYPERCUBE', 'SPHERE', 'TORUS',
             'KLEIN BOTTLE', 'FRACTAL', 'WAVE', 'CRYSTAL'
         ];
-        
-        const geometryMap = [
-            0, 0, 0, 0,  // 0-3: TETRAHEDRON variations
-            1, 1, 1, 1,  // 4-7: HYPERCUBE variations
-            2, 2, 2, 2,  // 8-11: SPHERE variations
-            3, 3, 3, 3,  // 12-15: TORUS variations
-            4, 4, 4, 4,  // 16-19: KLEIN BOTTLE variations
-            5, 5, 5,     // 20-22: FRACTAL variations
-            6, 6, 6,     // 23-25: WAVE variations
-            7, 7, 7, 7   // 26-29: CRYSTAL variations
-        ];
-        
-        const baseGeometry = geometryMap[variant] || 0;
+
+        const geometryIndex = HOLOGRAPHIC_VARIANT_GEOMETRY_MAP[variant] ?? 0;
+        const coreIndex = HOLOGRAPHIC_VARIANT_CORE_MAP[variant] ?? HOLOGRAPHIC_CORE_TYPES.BASE;
+        const geometryName = vib3Geometries[geometryIndex] || 'UNKNOWN';
         const variationLevel = variant % 4;
-        const geometryName = vib3Geometries[baseGeometry];
-        
-        const suffixes = [' LATTICE', ' FIELD', ' MATRIX', ' RESONANCE'];
-        const finalName = geometryName + suffixes[variationLevel];
-        
+
         const geometryConfigs = {
             0: { density: 0.8 + variationLevel * 0.2, speed: 0.3 + variationLevel * 0.1, chaos: variationLevel * 0.1, morph: 0.0 + variationLevel * 0.2 },
             1: { density: 1.0 + variationLevel * 0.3, speed: 0.5 + variationLevel * 0.1, chaos: variationLevel * 0.15, morph: variationLevel * 0.2 },
@@ -117,19 +111,41 @@ export class HolographicVisualizer {
             6: { density: 0.6 + variationLevel * 0.4, speed: 0.8 + variationLevel * 0.4, chaos: 0.4 + variationLevel * 0.3, morph: 0.6 + variationLevel * 0.2 },
             7: { density: 1.6 + variationLevel * 0.2, speed: 0.2 + variationLevel * 0.1, chaos: 0.1 + variationLevel * 0.1, morph: 0.2 + variationLevel * 0.2 }
         };
-        
-        const config = geometryConfigs[baseGeometry];
-        
+
+        const coreAdjustments = {
+            [HOLOGRAPHIC_CORE_TYPES.BASE]: { density: 1.0, speed: 1.0, chaos: 1.0, morph: 1.0 },
+            [HOLOGRAPHIC_CORE_TYPES.HYPERSPHERE]: { density: 1.15, speed: 0.9, chaos: 1.2, morph: 1.25 },
+            [HOLOGRAPHIC_CORE_TYPES.HYPERTETRA]: { density: 0.95, speed: 1.1, chaos: 1.15, morph: 1.35 }
+        };
+
+        const baseConfig = geometryConfigs[geometryIndex] || { density: 1.0, speed: 0.5, chaos: 0.2, morph: 0.4 };
+        const adjustment = coreAdjustments[coreIndex] || coreAdjustments[HOLOGRAPHIC_CORE_TYPES.BASE];
+
+        const density = baseConfig.density * adjustment.density;
+        const speed = baseConfig.speed * adjustment.speed;
+        const chaos = baseConfig.chaos * adjustment.chaos;
+        const morph = baseConfig.morph * adjustment.morph;
+
+        const encodedGeometry = geometryIndex + coreIndex * vib3Geometries.length;
+        const finalName = HOLOGRAPHIC_VARIANT_NAMES[variant] || geometryName;
+
         return {
-            geometryType: baseGeometry,
+            geometryType: encodedGeometry,
+            coreType: coreIndex,
             name: finalName,
-            density: config.density,
-            speed: config.speed,
+            density,
+            speed,
             hue: (variant * 12.27) % 360,
-            saturation: 0.8 + (variationLevel * 0.05), // Add saturation parameter
+            saturation: 0.8 + (variationLevel * 0.05),
             intensity: 0.5 + (variationLevel * 0.1),
-            chaos: config.chaos,
-            morph: config.morph
+            chaos,
+            morph,
+            rot4dXY: 0.0,
+            rot4dXZ: 0.0,
+            rot4dYZ: 0.0,
+            rot4dXW: 0.0,
+            rot4dYW: 0.0,
+            rot4dZW: 0.0
         };
     }
     
@@ -207,11 +223,41 @@ export class HolographicVisualizer {
             uniform float u_audioSpeedBoost;
             uniform float u_audioChaosBoost;
             uniform float u_audioColorShift;
+            uniform float u_rot4dXY;
+            uniform float u_rot4dXZ;
+            uniform float u_rot4dYZ;
             uniform float u_rot4dXW;
             uniform float u_rot4dYW;
             uniform float u_rot4dZW;
             
             // 4D rotation matrices
+            mat4 rotateXY(float theta) {
+                float c = cos(theta);
+                float s = sin(theta);
+                return mat4(c, -s, 0.0, 0.0,
+                            s,  c, 0.0, 0.0,
+                            0.0, 0.0, 1.0, 0.0,
+                            0.0, 0.0, 0.0, 1.0);
+            }
+
+            mat4 rotateXZ(float theta) {
+                float c = cos(theta);
+                float s = sin(theta);
+                return mat4(c, 0.0, -s, 0.0,
+                            0.0, 1.0, 0.0, 0.0,
+                            s, 0.0,  c, 0.0,
+                            0.0, 0.0, 0.0, 1.0);
+            }
+
+            mat4 rotateYZ(float theta) {
+                float c = cos(theta);
+                float s = sin(theta);
+                return mat4(1.0, 0.0, 0.0, 0.0,
+                            0.0, c, -s, 0.0,
+                            0.0, s,  c, 0.0,
+                            0.0, 0.0, 0.0, 1.0);
+            }
+
             mat4 rotateXW(float theta) {
                 float c = cos(theta);
                 float s = sin(theta);
@@ -234,6 +280,73 @@ export class HolographicVisualizer {
             vec3 project4Dto3D(vec4 p) {
                 float w = 2.5 / (2.5 + p.w);
                 return vec3(p.x * w, p.y * w, p.z * w);
+            }
+
+            vec4 applyInteractiveRotation(vec4 pos, vec2 mouseOffset, float scrollRotation, float touchRotation) {
+                float timeFactor = u_time * 0.0004 * u_speed * u_roleSpeed;
+                float audioOffset = (u_audioChaosBoost + u_audioMorphBoost) * 0.2;
+
+                pos = rotateXY(u_rot4dXY + timeFactor * 0.18 + mouseOffset.x * 0.4 + scrollRotation * 0.15) * pos;
+                pos = rotateXZ(u_rot4dXZ + timeFactor * 0.16 + mouseOffset.y * 0.35 + touchRotation * 0.2) * pos;
+                pos = rotateYZ(u_rot4dYZ + timeFactor * 0.12 + u_touchChaos * 0.3 + u_clickIntensity * 0.2) * pos;
+                pos = rotateXW(u_rot4dXW + timeFactor * 0.2 + mouseOffset.y * 0.5 + scrollRotation) * pos;
+                pos = rotateYW(u_rot4dYW + timeFactor * 0.15 + mouseOffset.x * 0.5 + touchRotation) * pos;
+                pos = rotateZW(u_rot4dZW + timeFactor * 0.25 + u_clickIntensity * 0.3 + u_touchChaos * 0.4 + audioOffset) * pos;
+                return pos;
+            }
+
+            vec3 warpHypersphereCore(vec3 p, int geometryIndex, vec2 mouseOffset, float scrollRotation, float touchRotation) {
+                float radius = length(p);
+                float morphBlend = clamp(u_morph + u_touchMorph * 0.6 + u_audioMorphBoost * 0.5, 0.0, 2.0);
+                float audioLift = (u_audioHigh * 0.5 + u_audioMid * 0.35);
+                float w = sin(radius * (1.4 + float(geometryIndex) * 0.1) + u_time * 0.0015 * u_speed);
+                w *= (0.35 + morphBlend * 0.4 + audioLift);
+
+                vec4 p4d = vec4(p * (1.0 + morphBlend * 0.25), w);
+                p4d = applyInteractiveRotation(p4d, mouseOffset, scrollRotation, touchRotation);
+                vec3 projected = project4Dto3D(p4d);
+
+                float blend = clamp(0.35 + morphBlend * 0.35 + u_audioDensityBoost * 0.2, 0.0, 1.0);
+                return mix(p, projected, blend);
+            }
+
+            vec3 warpHypertetraCore(vec3 p, int geometryIndex, vec2 mouseOffset, float scrollRotation, float touchRotation) {
+                vec3 c1 = normalize(vec3(1.0, 1.0, 1.0));
+                vec3 c2 = normalize(vec3(-1.0, -1.0, 1.0));
+                vec3 c3 = normalize(vec3(-1.0, 1.0, -1.0));
+                vec3 c4 = normalize(vec3(1.0, -1.0, -1.0));
+
+                float morphBlend = clamp(u_morph * 0.8 + u_audioMorphBoost * 0.4 + u_touchMorph * 0.6, 0.0, 2.0);
+                float basisMix = dot(p, c1) * 0.12 + dot(p, c2) * 0.08 + dot(p, c3) * 0.05;
+                float w = sin(basisMix * 6.0 + u_time * 0.0012 * u_speed);
+                w *= cos(dot(p, c4) * 4.5 - u_time * 0.0010 * u_speed);
+                w *= (0.45 + morphBlend * 0.35 + u_audioHigh * 0.3);
+
+                vec3 offset = vec3(dot(p, c1), dot(p, c2), dot(p, c3)) * 0.12 * morphBlend;
+                vec4 p4d = vec4(p + offset, w);
+                p4d = applyInteractiveRotation(p4d, mouseOffset, scrollRotation, touchRotation);
+                vec3 projected = project4Dto3D(p4d);
+
+                float planeInfluence = min(min(abs(dot(p, c1)), abs(dot(p, c2))), min(abs(dot(p, c3)), abs(dot(p, c4))));
+                vec3 blended = mix(p, projected, clamp(0.4 + morphBlend * 0.4, 0.0, 1.0));
+                return mix(blended, blended * (1.0 - planeInfluence * 0.6), 0.25 + morphBlend * 0.15);
+            }
+
+            vec3 applyCoreWarp(vec3 p, float geometryType, vec2 mouseOffset, float scrollRotation, float touchRotation) {
+                float totalBase = 8.0;
+                float coreFloat = floor(geometryType / totalBase);
+                int coreIndex = int(clamp(coreFloat, 0.0, 2.0));
+                float baseGeomFloat = mod(geometryType, totalBase);
+                int geometryIndex = int(clamp(floor(baseGeomFloat + 0.5), 0.0, totalBase - 1.0));
+
+                if (coreIndex == 1) {
+                    return warpHypersphereCore(p, geometryIndex, mouseOffset, scrollRotation, touchRotation);
+                }
+                if (coreIndex == 2) {
+                    return warpHypertetraCore(p, geometryIndex, mouseOffset, scrollRotation, touchRotation);
+                }
+
+                return p;
             }
             
             // Enhanced VIB3 Geometry Library - Higher Fidelity
@@ -346,20 +459,39 @@ export class HolographicVisualizer {
             }
             
             float getDynamicGeometry(vec3 p, float gridSize, float geometryType) {
-                // WebGL 1.0 compatible modulus replacement
-                float baseGeomFloat = geometryType - floor(geometryType / 8.0) * 8.0;
-                int baseGeom = int(baseGeomFloat);
-                float variation = floor(geometryType / 8.0) / 4.0;
-                float variedGridSize = gridSize * (0.5 + variation * 1.5);
-                
-                if (baseGeom == 0) return tetrahedronLattice(p, variedGridSize);
-                else if (baseGeom == 1) return hypercubeLattice(p, variedGridSize);
-                else if (baseGeom == 2) return sphereLattice(p, variedGridSize);
-                else if (baseGeom == 3) return torusLattice(p, variedGridSize);
-                else if (baseGeom == 4) return kleinLattice(p, variedGridSize);
-                else if (baseGeom == 5) return fractalLattice(p, variedGridSize);
-                else if (baseGeom == 6) return waveLattice(p, variedGridSize);
-                else return crystalLattice(p, variedGridSize);
+                float totalBase = 8.0;
+                float coreFloat = clamp(floor(geometryType / totalBase), 0.0, 2.0);
+                float baseGeomFloat = mod(geometryType, totalBase);
+                int baseGeom = int(clamp(floor(baseGeomFloat + 0.5), 0.0, totalBase - 1.0));
+
+                float variation = coreFloat / 2.0;
+                float variedGridSize = gridSize * mix(0.85, 1.25, variation);
+
+                float baseValue;
+                if (baseGeom == 0) baseValue = tetrahedronLattice(p, variedGridSize);
+                else if (baseGeom == 1) baseValue = hypercubeLattice(p, variedGridSize);
+                else if (baseGeom == 2) baseValue = sphereLattice(p, variedGridSize);
+                else if (baseGeom == 3) baseValue = torusLattice(p, variedGridSize);
+                else if (baseGeom == 4) baseValue = kleinLattice(p, variedGridSize);
+                else if (baseGeom == 5) baseValue = fractalLattice(p, variedGridSize);
+                else if (baseGeom == 6) baseValue = waveLattice(p, variedGridSize);
+                else baseValue = crystalLattice(p, variedGridSize);
+
+                float hypersphereInfluence = 0.35 + variation * 0.35;
+                float hypertetraInfluence = 0.45 + variation * 0.4;
+
+                if (coreFloat == 1.0) {
+                    float radius = length(p);
+                    float shell = 0.5 + 0.5 * sin(radius * variedGridSize * 0.6 + u_time * 0.0006 * u_speed);
+                    baseValue = mix(baseValue, smoothstep(0.75, 1.0, shell), hypersphereInfluence);
+                } else if (coreFloat == 2.0) {
+                    vec3 diag = normalize(vec3(1.0, 1.0, 1.0));
+                    float plane = abs(dot(normalize(p + 0.0001), diag));
+                    float striated = smoothstep(0.6, 1.0, plane);
+                    baseValue = mix(baseValue, striated, hypertetraInfluence);
+                }
+
+                return baseValue;
             }
             
             vec3 hsv2rgb(vec3 c) {
@@ -416,10 +548,8 @@ export class HolographicVisualizer {
                 float touchRotation = u_touchMorph * 0.2;
                 
                 // Combine manual rotation with automatic/interactive rotation
-                p4d = rotateXW(u_rot4dXW + time * 0.2 + mouseOffset.y * 0.5 + scrollRotation) * p4d;
-                p4d = rotateYW(u_rot4dYW + time * 0.15 + mouseOffset.x * 0.5 + touchRotation) * p4d;
-                p4d = rotateZW(u_rot4dZW + time * 0.25 + u_clickIntensity * 0.3 + u_touchChaos * 0.4) * p4d;
-                
+                p4d = applyInteractiveRotation(p4d, mouseOffset, scrollRotation, touchRotation);
+
                 vec3 p = project4Dto3D(p4d);
                 
                 float scrollDensityMod = 1.0 + u_gridDensityShift * 0.3;
@@ -430,7 +560,8 @@ export class HolographicVisualizer {
                 float roleDensity = baseDensity + densityVariations;
                 
                 float morphedGeometry = u_geometryType + u_morph * 3.0 + u_touchMorph * 2.0 + u_audioMorphBoost * 1.5;
-                float lattice = getDynamicGeometry(p, roleDensity, morphedGeometry);
+                vec3 warpedP = applyCoreWarp(p, morphedGeometry, mouseOffset, scrollRotation, touchRotation);
+                float lattice = getDynamicGeometry(warpedP, roleDensity, morphedGeometry);
                 
                 // Enhanced holographic color processing
                 vec3 baseColor = u_color;
@@ -515,6 +646,9 @@ export class HolographicVisualizer {
             audioSpeedBoost: this.gl.getUniformLocation(this.program, 'u_audioSpeedBoost'),
             audioChaosBoost: this.gl.getUniformLocation(this.program, 'u_audioChaosBoost'),
             audioColorShift: this.gl.getUniformLocation(this.program, 'u_audioColorShift'),
+            rot4dXY: this.gl.getUniformLocation(this.program, 'u_rot4dXY'),
+            rot4dXZ: this.gl.getUniformLocation(this.program, 'u_rot4dXZ'),
+            rot4dYZ: this.gl.getUniformLocation(this.program, 'u_rot4dYZ'),
             rot4dXW: this.gl.getUniformLocation(this.program, 'u_rot4dXW'),
             rot4dYW: this.gl.getUniformLocation(this.program, 'u_rot4dYW'),
             rot4dZW: this.gl.getUniformLocation(this.program, 'u_rot4dZW')
@@ -806,6 +940,9 @@ export class HolographicVisualizer {
         this.gl.uniform1f(this.uniforms.audioColorShift, audioColor);
         
         // 4D rotation uniforms
+        this.gl.uniform1f(this.uniforms.rot4dXY, this.variantParams.rot4dXY || 0.0);
+        this.gl.uniform1f(this.uniforms.rot4dXZ, this.variantParams.rot4dXZ || 0.0);
+        this.gl.uniform1f(this.uniforms.rot4dYZ, this.variantParams.rot4dYZ || 0.0);
         this.gl.uniform1f(this.uniforms.rot4dXW, this.variantParams.rot4dXW || 0.0);
         this.gl.uniform1f(this.uniforms.rot4dYW, this.variantParams.rot4dYW || 0.0);
         this.gl.uniform1f(this.uniforms.rot4dZW, this.variantParams.rot4dZW || 0.0);
@@ -859,7 +996,7 @@ export class HolographicVisualizer {
      * CRITICAL FIX: Update visualization parameters with immediate re-render
      * This method was missing and causing parameter sliders to not work in holographic system
      */
-    updateParameters(params) {
+    updateParameters(params, context = {}) {
         // Update variant parameters with proper mapping and scaling
         if (this.variantParams) {
             Object.keys(params).forEach(param => {
@@ -896,15 +1033,20 @@ export class HolographicVisualizer {
         const paramMap = {
             'gridDensity': 'density',
             'morphFactor': 'morph',
+            'rot4dXY': 'rot4dXY',
+            'rot4dXZ': 'rot4dXZ',
+            'rot4dYZ': 'rot4dYZ',
             'rot4dXW': 'rot4dXW',
-            'rot4dYW': 'rot4dYW', 
+            'rot4dYW': 'rot4dYW',
             'rot4dZW': 'rot4dZW',
             'hue': 'hue',
             'intensity': 'intensity',
             'saturation': 'saturation',
             'chaos': 'chaos',
             'speed': 'speed',
-            'geometry': 'geometryType'
+            'geometry': 'geometryType',
+            'geometryBase': null,
+            'geometryCore': 'coreType'
         };
         return paramMap[globalParam] || globalParam;
     }

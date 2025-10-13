@@ -9,7 +9,9 @@
     "./quaternion": "./src/ui/adaptive/renderers/ShaderQuaternionSynchronizer.js",
     "./sensors": "./src/ui/adaptive/SensoryInputBridge.js",
     "./polychora": "./src/core/PolychoraSystem.js",
-    "./geometry": "./src/geometry/GeometryLibrary.js"
+    "./geometry": "./src/geometry/GeometryLibrary.js",
+    "./vib3plus": "./src/vib3plus/Vib3PlusEnvironment.js",
+    "./vib3plus/geometry": "./src/vib3plus/Vib3PlusGeometryTree.js"
   },
   "keywords": [
     "quaternion",
@@ -37,6 +39,10 @@
   },
   "engines": {
     "node": ">=16.0.0"
+  },
+  "scripts": {
+    "setup": "node ./scripts/setup.mjs",
+    "test": "node --test"
   },
   "files": [
     "src/",
