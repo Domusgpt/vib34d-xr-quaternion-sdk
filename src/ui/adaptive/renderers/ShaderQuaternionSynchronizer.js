@@ -1,3 +1,11 @@
+import {
+    QuaternionFieldService,
+    normalizeQuaternion as normalizeQuaternionUtil,
+    quaternionToEuler as quaternionToEulerUtil,
+    multiplyQuaternions,
+    conjugateQuaternion
+} from '../../../core/quaternions/QuaternionFieldService.js';
+
 /**
  * ShaderQuaternionSynchronizer
  * ------------------------------------------------------------
@@ -12,6 +20,9 @@ const ROTATION_LIMIT = 6.28; // ±2π rad slider range
 const DEG_PER_RAD = 180 / Math.PI;
 
 const PARAM_LIMITS = {
+    rot4dXY: { min: -ROTATION_LIMIT, max: ROTATION_LIMIT },
+    rot4dXZ: { min: -ROTATION_LIMIT, max: ROTATION_LIMIT },
+    rot4dYZ: { min: -ROTATION_LIMIT, max: ROTATION_LIMIT },
     rot4dXW: { min: -ROTATION_LIMIT, max: ROTATION_LIMIT },
     rot4dYW: { min: -ROTATION_LIMIT, max: ROTATION_LIMIT },
     rot4dZW: { min: -ROTATION_LIMIT, max: ROTATION_LIMIT },
@@ -24,8 +35,6 @@ const PARAM_LIMITS = {
 
 const CHANNELS = ['spatial.anchors', 'spatial.hit-tests', 'spatial.pose'];
 
-const identityQuaternion = () => ({ x: 0, y: 0, z: 0, w: 1 });
-
 export class ShaderQuaternionSynchronizer {
     constructor(options = {}) {
         const {
@@ -37,7 +46,8 @@ export class ShaderQuaternionSynchronizer {
             baseAlpha = 0.25,
             energySmoothing = 0.35,
             velocityReference = 8,
-            logger = console
+            logger = console,
+            quaternionService
         } = options;
 
         if (!bridge || typeof bridge.subscribe !== 'function') {
@@ -62,6 +72,25 @@ export class ShaderQuaternionSynchronizer {
         this.lastQuaternion = null;
         this.lastTimestamp = null;
         this.motionEnergy = 0;
+
+        this.quaternionService = quaternionService
+            || new QuaternionFieldService({
+                energySmoothing: this.energySmoothing,
+                velocityReference: this.velocityReference,
+                logger: this.logger
+            });
+        this.quaternionServiceObserver = snapshot => {
+            this.applyNormalizedOrientation(snapshot.primaryQuaternion, {
+                timestamp: snapshot.timestamp,
+                confidence: snapshot.confidence,
+                source: snapshot.source,
+                position: snapshot.position,
+                uniforms: snapshot.uniforms,
+                fromQuaternionService: true
+            }, snapshot);
+        };
+        this.quaternionServiceSubscription = null;
+        this.subscribeToQuaternionService();
     }
 
     start() {
@@ -76,6 +105,7 @@ export class ShaderQuaternionSynchronizer {
             });
             this.subscriptions.push(unsubscribe);
         });
+        this.subscribeToQuaternionService();
         return this;
     }
 
@@ -86,6 +116,25 @@ export class ShaderQuaternionSynchronizer {
             } catch (error) {
                 this.logger?.warn?.('[ShaderQuaternionSynchronizer] unsubscribe failed', error);
             }
+        }
+        if (this.quaternionServiceSubscription) {
+            try {
+                this.quaternionServiceSubscription();
+            } catch (error) {
+                this.logger?.warn?.('[ShaderQuaternionSynchronizer] service unsubscribe failed', error);
+            }
+            this.quaternionServiceSubscription = null;
+        }
+    }
+
+    subscribeToQuaternionService() {
+        if (!this.quaternionService || this.quaternionServiceSubscription) {
+            return;
+        }
+        try {
+            this.quaternionServiceSubscription = this.quaternionService.subscribe(this.quaternionServiceObserver);
+        } catch (error) {
+            this.logger?.warn?.('[ShaderQuaternionSynchronizer] failed to subscribe to quaternion service', error);
         }
     }
 
@@ -103,7 +152,12 @@ export class ShaderQuaternionSynchronizer {
         if (channel === 'spatial.anchors') {
             const pose = this.extractAnchorPose(event.payload);
             if (pose) {
-                this.applyOrientation(pose.orientation, { confidence, timestamp, source: channel });
+                this.applyOrientation(pose.orientation, {
+                    confidence,
+                    timestamp,
+                    source: channel,
+                    position: pose.position || null
+                });
             }
             return;
         }
@@ -112,7 +166,12 @@ export class ShaderQuaternionSynchronizer {
             const pose = this.extractHitTestPose(event.payload);
             if (pose) {
                 const effectiveConfidence = this.normalizeConfidence(pose.confidence ?? confidence);
-                this.applyOrientation(pose.orientation, { confidence: effectiveConfidence, timestamp, source: channel });
+                this.applyOrientation(pose.orientation, {
+                    confidence: effectiveConfidence,
+                    timestamp,
+                    source: channel,
+                    position: pose.position || null
+                });
             }
             return;
         }
@@ -120,7 +179,12 @@ export class ShaderQuaternionSynchronizer {
         if (channel === 'spatial.pose') {
             const orientation = event.payload?.orientation;
             if (orientation) {
-                this.applyOrientation(orientation, { confidence, timestamp, source: channel });
+                this.applyOrientation(orientation, {
+                    confidence,
+                    timestamp,
+                    source: channel,
+                    position: event.payload?.position || null
+                });
             }
         }
     }
@@ -165,77 +229,190 @@ export class ShaderQuaternionSynchronizer {
         }
         return {
             orientation: best.pose.orientation,
-            confidence: best.confidence
+            confidence: best.confidence,
+            position: best.pose.position || null
         };
     }
 
     applyOrientation(quaternion, context = {}) {
         const normalized = this.normalizeQuaternion(quaternion);
-        const timestamp = typeof context.timestamp === 'number' ? context.timestamp : this.lastTimestamp || 0;
-        const confidence = this.normalizeConfidence(context.confidence);
-
         if (!normalized) {
             return;
         }
 
-        const euler = this.quaternionToEuler(normalized);
+        if (this.quaternionService && !context.fromQuaternionService) {
+            this.quaternionService.ingestPrimaryQuaternion(normalized, context);
+            return;
+        }
+
+        this.applyNormalizedOrientation(normalized, context);
+    }
+
+    applyNormalizedOrientation(normalized, context = {}, derived = {}) {
+        const timestamp = typeof derived.timestamp === 'number'
+            ? derived.timestamp
+            : typeof context.timestamp === 'number'
+                ? context.timestamp
+                : this.lastTimestamp ?? (typeof performance !== 'undefined' && typeof performance.now === 'function'
+                    ? performance.now()
+                    : Date.now());
+        const confidence = this.normalizeConfidence(
+            Number.isFinite(derived.confidence) ? derived.confidence : context.confidence
+        );
+
+        const euler = derived.euler || this.quaternionToEuler(normalized);
+        const combinedPitchYaw = (euler.pitch + euler.yaw) * 0.5;
+        const combinedPitchRoll = (euler.pitch + euler.roll) * 0.5;
+        const combinedYawRoll = (euler.yaw + euler.roll) * 0.5;
+
         const rotationTarget = {
+            rot4dXY: this.clampNumber(combinedPitchYaw * this.rotationScale, PARAM_LIMITS.rot4dXY),
+            rot4dXZ: this.clampNumber(combinedPitchRoll * this.rotationScale, PARAM_LIMITS.rot4dXZ),
+            rot4dYZ: this.clampNumber(combinedYawRoll * this.rotationScale, PARAM_LIMITS.rot4dYZ),
             rot4dXW: this.clampNumber(euler.pitch * this.rotationScale, PARAM_LIMITS.rot4dXW),
             rot4dYW: this.clampNumber(euler.yaw * this.rotationScale, PARAM_LIMITS.rot4dYW),
             rot4dZW: this.clampNumber(euler.roll * this.rotationScale, PARAM_LIMITS.rot4dZW)
         };
 
-        const motionEnergy = this.computeMotionEnergy(normalized, timestamp);
+        let motionEnergy;
+        if (Number.isFinite(derived.motionEnergy)) {
+            motionEnergy = derived.motionEnergy;
+            this.lastQuaternion = normalized;
+            this.lastTimestamp = timestamp;
+            this.motionEnergy = derived.motionEnergy;
+        } else {
+            motionEnergy = this.computeMotionEnergy(normalized, timestamp);
+        }
 
-        this.applyToSystem('quantum', rotationTarget, motionEnergy, confidence, euler);
-        this.applyToSystem('holographic', rotationTarget, motionEnergy, confidence, euler);
-        this.applyToSystem('faceted', rotationTarget, motionEnergy, confidence, euler);
+        const updateContext = {
+            timestamp,
+            confidence,
+            motionEnergy,
+            source: derived.source || context.source || 'quaternion',
+            position: derived.position || context.position || null,
+            quaternion: normalized,
+            euler,
+            uniforms: derived.uniforms || context.uniforms || null
+        };
+
+        this.applyToSystem('quantum', rotationTarget, updateContext);
+        this.applyToSystem('holographic', rotationTarget, updateContext);
+        this.applyToSystem('faceted', rotationTarget, updateContext);
     }
 
-    applyToSystem(systemName, rotationTarget, motionEnergy, confidence, euler) {
+    applyToSystem(systemName, rotationTarget, context) {
         const system = this.resolveSystem(systemName);
-        if (!system || typeof system.updateParameter !== 'function') {
+        if (!system) {
             return;
         }
 
-        this.applyParameter(systemName, system, 'rot4dXW', rotationTarget.rot4dXW, confidence);
-        this.applyParameter(systemName, system, 'rot4dYW', rotationTarget.rot4dYW, confidence);
-        this.applyParameter(systemName, system, 'rot4dZW', rotationTarget.rot4dZW, confidence);
+        const updates = {};
+        const parameterMeta = {};
+        const queueUpdate = (param, targetValue) => {
+            const computed = this.computeParameterUpdate(systemName, system, param, targetValue, context);
+            if (!computed) {
+                return;
+            }
+            updates[param] = computed.value;
+            parameterMeta[param] = {
+                current: computed.current,
+                target: computed.target,
+                alpha: computed.alpha
+            };
+        };
+
+        queueUpdate('rot4dXY', rotationTarget.rot4dXY);
+        queueUpdate('rot4dXZ', rotationTarget.rot4dXZ);
+        queueUpdate('rot4dYZ', rotationTarget.rot4dYZ);
+        queueUpdate('rot4dXW', rotationTarget.rot4dXW);
+        queueUpdate('rot4dYW', rotationTarget.rot4dYW);
+        queueUpdate('rot4dZW', rotationTarget.rot4dZW);
 
         if (systemName === 'quantum') {
             const baseChaos = this.getBaseParameter(systemName, system, 'chaos', 0.2);
             const baseIntensity = this.getBaseParameter(systemName, system, 'intensity', 0.7);
-            const chaosTarget = this.clampNumber(baseChaos + motionEnergy * 0.5, PARAM_LIMITS.chaos);
-            const intensityTarget = this.clampNumber(baseIntensity + motionEnergy * 0.4, PARAM_LIMITS.intensity);
-            this.applyParameter(systemName, system, 'chaos', chaosTarget, confidence);
-            this.applyParameter(systemName, system, 'intensity', intensityTarget, confidence);
+            const chaosTarget = this.clampNumber(baseChaos + (context.motionEnergy || 0) * 0.5, PARAM_LIMITS.chaos);
+            const intensityTarget = this.clampNumber(baseIntensity + (context.motionEnergy || 0) * 0.4, PARAM_LIMITS.intensity);
+            queueUpdate('chaos', chaosTarget);
+            queueUpdate('intensity', intensityTarget);
         } else if (systemName === 'holographic') {
             const baseHue = this.getBaseParameter(systemName, system, 'hue', 320);
             const baseSaturation = this.getBaseParameter(systemName, system, 'saturation', 0.9);
-            const hueTarget = this.clampNumber(baseHue + euler.yaw * DEG_PER_RAD * 8, PARAM_LIMITS.hue);
-            const saturationTarget = this.clampNumber(baseSaturation + motionEnergy * 0.15, PARAM_LIMITS.saturation);
-            this.applyParameter(systemName, system, 'hue', hueTarget, confidence);
-            this.applyParameter(systemName, system, 'saturation', saturationTarget, confidence);
+            const hueTarget = this.clampNumber(baseHue + (context.euler?.yaw || 0) * DEG_PER_RAD * 8, PARAM_LIMITS.hue);
+            const saturationTarget = this.clampNumber(baseSaturation + (context.motionEnergy || 0) * 0.15, PARAM_LIMITS.saturation);
+            queueUpdate('hue', hueTarget);
+            queueUpdate('saturation', saturationTarget);
         } else if (systemName === 'faceted') {
             const baseSpeed = this.getBaseParameter(systemName, system, 'speed', 1);
-            const speedTarget = this.clampNumber(baseSpeed + motionEnergy * 0.6, PARAM_LIMITS.speed);
-            this.applyParameter(systemName, system, 'speed', speedTarget, confidence);
+            const speedTarget = this.clampNumber(baseSpeed + (context.motionEnergy || 0) * 0.6, PARAM_LIMITS.speed);
+            queueUpdate('speed', speedTarget);
+        }
+
+        if (!Object.keys(updates).length) {
+            return;
+        }
+
+        const contextForSystem = {
+            ...context,
+            systemName,
+            parameters: parameterMeta
+        };
+
+        if (typeof system.batchUpdate === 'function') {
+            try {
+                system.batchUpdate(updates, contextForSystem);
+                return;
+            } catch (error) {
+                this.logger?.warn?.('[ShaderQuaternionSynchronizer] batchUpdate failed, falling back to single updates', { systemName, error });
+            }
+        }
+
+        for (const [param, value] of Object.entries(updates)) {
+            this.invokeUpdateParameter(systemName, system, param, value, contextForSystem);
         }
     }
 
-    applyParameter(systemName, system, param, targetValue, confidence) {
+    computeParameterUpdate(systemName, system, param, targetValue, context = {}) {
         const limits = PARAM_LIMITS[param];
         const sanitizedTarget = limits ? this.clampNumber(targetValue, limits) : targetValue;
+        if (!Number.isFinite(sanitizedTarget)) {
+            return null;
+        }
+
         const current = this.getCurrentParameter(system, param);
-        const alpha = this.computeAlpha(confidence);
+        const alpha = this.computeAlpha(context.confidence);
         const nextValue = this.lerp(current, sanitizedTarget, alpha);
 
         if (!Number.isFinite(nextValue)) {
+            return null;
+        }
+
+        if (Math.abs(nextValue - current) < 1e-6) {
+            return null;
+        }
+
+        return { value: nextValue, target: sanitizedTarget, current, alpha };
+    }
+
+    invokeUpdateParameter(systemName, system, param, value, context) {
+        if (!Number.isFinite(value)) {
             return;
         }
 
         try {
-            system.updateParameter(param, nextValue);
+            if (typeof system.updateParameter === 'function') {
+                system.updateParameter(param, value, context);
+                return;
+            }
+
+            if (system.parameters instanceof Map) {
+                system.parameters.set(param, value);
+                return;
+            }
+
+            if (system.parameters && typeof system.parameters === 'object') {
+                system.parameters[param] = value;
+            }
         } catch (error) {
             this.logger?.warn?.('[ShaderQuaternionSynchronizer] failed to update parameter', { systemName, param, error });
         }
@@ -271,42 +448,11 @@ export class ShaderQuaternionSynchronizer {
     }
 
     normalizeQuaternion(quaternion) {
-        if (!quaternion || typeof quaternion !== 'object') {
-            return identityQuaternion();
-        }
-        const x = Number(quaternion.x) || 0;
-        const y = Number(quaternion.y) || 0;
-        const z = Number(quaternion.z) || 0;
-        const w = Number(quaternion.w);
-        const wValue = Number.isFinite(w) ? w : Math.sqrt(Math.max(0, 1 - (x * x + y * y + z * z)));
-        const length = Math.hypot(x, y, z, wValue);
-        if (length === 0) {
-            return identityQuaternion();
-        }
-        return {
-            x: x / length,
-            y: y / length,
-            z: z / length,
-            w: wValue / length
-        };
+        return normalizeQuaternionUtil(quaternion);
     }
 
     quaternionToEuler(q) {
-        // Roll (x-axis rotation)
-        const sinr = 2 * (q.w * q.x + q.y * q.z);
-        const cosr = 1 - 2 * (q.x * q.x + q.y * q.y);
-        const roll = Math.atan2(sinr, cosr);
-
-        // Pitch (y-axis rotation)
-        const sinp = 2 * (q.w * q.y - q.z * q.x);
-        const pitch = Math.abs(sinp) >= 1 ? Math.sign(sinp) * (Math.PI / 2) : Math.asin(sinp);
-
-        // Yaw (z-axis rotation)
-        const siny = 2 * (q.w * q.z + q.x * q.y);
-        const cosy = 1 - 2 * (q.y * q.y + q.z * q.z);
-        const yaw = Math.atan2(siny, cosy);
-
-        return { roll, pitch, yaw };
+        return quaternionToEulerUtil(q);
     }
 
     normalizeConfidence(value) {
@@ -337,7 +483,7 @@ export class ShaderQuaternionSynchronizer {
             return 0;
         }
 
-        const deltaQuat = this.multiply(quaternion, this.conjugate(this.lastQuaternion));
+        const deltaQuat = multiplyQuaternions(quaternion, conjugateQuaternion(this.lastQuaternion));
         const angle = 2 * Math.atan2(
             Math.hypot(deltaQuat.x, deltaQuat.y, deltaQuat.z),
             deltaQuat.w
@@ -352,19 +498,6 @@ export class ShaderQuaternionSynchronizer {
         this.lastQuaternion = quaternion;
         this.lastTimestamp = timestamp;
         return this.motionEnergy;
-    }
-
-    multiply(a, b) {
-        return {
-            w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
-            x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
-            y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
-            z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w
-        };
-    }
-
-    conjugate(q) {
-        return { x: -q.x, y: -q.y, z: -q.z, w: q.w };
     }
 
     lerp(start, end, alpha) {
