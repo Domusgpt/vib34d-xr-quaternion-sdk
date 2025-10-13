@@ -4,13 +4,19 @@
  * Audio reactive only - no mouse/touch/scroll interference
  */
 import { HolographicVisualizer } from './HolographicVisualizer.js';
+import {
+    HOLOGRAPHIC_VARIANT_NAMES,
+    HOLOGRAPHIC_TOTAL_VARIANTS,
+    HOLOGRAPHIC_VARIANT_GEOMETRY_MAP,
+    HOLOGRAPHIC_VARIANT_CORE_MAP
+} from './variantRegistry.js';
 
 export class RealHolographicSystem {
     constructor() {
         this.visualizers = [];
         this.currentVariant = 0;
-        this.baseVariants = 30; // Original 30 variations
-        this.totalVariants = 30;
+        this.baseVariants = 30; // Historical base set retained for reference
+        this.totalVariants = HOLOGRAPHIC_TOTAL_VARIANTS;
         this.isActive = false;
         
         // REMOVED: Built-in reactivity - ReactivityManager handles all interactions now
@@ -23,24 +29,9 @@ export class RealHolographicSystem {
         this.audioData = { bass: 0, mid: 0, high: 0 };
         
         // Variant names for display - SEQUENTIAL ORDER
-        this.variantNames = [
-            // 0-3: TETRAHEDRON variations
-            'TETRAHEDRON LATTICE', 'TETRAHEDRON FIELD', 'TETRAHEDRON MATRIX', 'TETRAHEDRON RESONANCE',
-            // 4-7: HYPERCUBE variations
-            'HYPERCUBE LATTICE', 'HYPERCUBE FIELD', 'HYPERCUBE MATRIX', 'HYPERCUBE QUANTUM',
-            // 8-11: SPHERE variations
-            'SPHERE LATTICE', 'SPHERE FIELD', 'SPHERE MATRIX', 'SPHERE RESONANCE',
-            // 12-15: TORUS variations
-            'TORUS LATTICE', 'TORUS FIELD', 'TORUS MATRIX', 'TORUS QUANTUM',
-            // 16-19: KLEIN BOTTLE variations
-            'KLEIN BOTTLE LATTICE', 'KLEIN BOTTLE FIELD', 'KLEIN BOTTLE MATRIX', 'KLEIN BOTTLE QUANTUM',
-            // 20-22: FRACTAL variations
-            'FRACTAL LATTICE', 'FRACTAL FIELD', 'FRACTAL QUANTUM',
-            // 23-25: WAVE variations
-            'WAVE LATTICE', 'WAVE FIELD', 'WAVE QUANTUM',
-            // 26-29: CRYSTAL variations
-            'CRYSTAL LATTICE', 'CRYSTAL FIELD', 'CRYSTAL MATRIX', 'CRYSTAL QUANTUM'
-        ];
+        this.variantNames = [...HOLOGRAPHIC_VARIANT_NAMES];
+        this.variantGeometryMap = [...HOLOGRAPHIC_VARIANT_GEOMETRY_MAP];
+        this.variantCoreMap = [...HOLOGRAPHIC_VARIANT_CORE_MAP];
         
         this.initialize();
     }
@@ -124,10 +115,13 @@ export class RealHolographicSystem {
     updateVariantDisplay() {
         // This will be called by the main UI system
         const variantName = this.variantNames[this.currentVariant];
+        const geometryType = this.variantGeometryMap[this.currentVariant] ?? 0;
+        const coreType = this.variantCoreMap[this.currentVariant] ?? 0;
         return {
             variant: this.currentVariant,
             name: variantName,
-            geometryType: Math.floor(this.currentVariant / 4)
+            geometryType,
+            coreType
         };
     }
     
@@ -148,47 +142,89 @@ export class RealHolographicSystem {
         this.updateVariant(variant);
     }
     
-    updateParameter(param, value) {
-        // Store custom parameter overrides
+    updateParameter(param, value, context = {}) {
+        this.batchUpdate({ [param]: value }, context);
+    }
+
+    batchUpdate(updates, context = {}) {
+        const entries = this.normalizeUpdateEntries(updates);
+        if (!entries.length) {
+            return;
+        }
+
         if (!this.customParams) {
             this.customParams = {};
         }
-        this.customParams[param] = value;
-        
-        console.log(`🌌 Updating holographic ${param}: ${value} (${this.visualizers.length} visualizers)`);
-        
-        // CRITICAL FIX: Call updateParameters method on ALL visualizers for immediate render
+
+        const applied = {};
+        for (const [param, value] of entries) {
+            if (param === undefined) {
+                continue;
+            }
+            this.customParams[param] = value;
+            applied[param] = value;
+        }
+
+        if (!Object.keys(applied).length) {
+            return;
+        }
+
+        console.log(`🌌 Applying holographic parameter batch`, applied);
+
         this.visualizers.forEach((visualizer, index) => {
             try {
-                if (visualizer.updateParameters) {
-                    // Use new updateParameters method with proper parameter mapping
-                    const params = {};
-                    params[param] = value;
-                    visualizer.updateParameters(params);
-                    console.log(`✅ Updated holographic layer ${index} (${visualizer.role}) with ${param}=${value}`);
+                if (typeof visualizer.updateParameters === 'function') {
+                    visualizer.updateParameters(applied, context);
+                    console.log(`✅ Updated holographic layer ${index} (${visualizer.role})`);
                 } else {
                     console.warn(`⚠️ Holographic layer ${index} missing updateParameters method, using fallback`);
-                    // Fallback for older method (direct parameter setting)
-                    if (visualizer.variantParams) {
-                        visualizer.variantParams[param] = value;
-                        
-                        // If it's a geometry type change, regenerate role params with new geometry
-                        if (param === 'geometryType') {
-                            visualizer.roleParams = visualizer.generateRoleParams(visualizer.role);
-                        }
-                        
-                        // Force manual render for older visualizers
-                        if (visualizer.render) {
-                            visualizer.render();
-                        }
-                    }
+                    this.applyFallbackParameters(visualizer, applied);
                 }
             } catch (error) {
                 console.error(`❌ Failed to update holographic layer ${index}:`, error);
             }
         });
-        
-        console.log(`🔄 Holographic parameter update complete: ${param}=${value}`);
+
+        console.log('🔄 Holographic parameter batch update complete');
+    }
+
+    normalizeUpdateEntries(updates) {
+        if (!updates) {
+            return [];
+        }
+
+        if (updates instanceof Map) {
+            return Array.from(updates.entries());
+        }
+
+        if (Array.isArray(updates)) {
+            return updates
+                .map(entry => Array.isArray(entry) ? entry : [entry?.param, entry?.value])
+                .filter(entry => entry && entry.length === 2 && entry[0] !== undefined);
+        }
+
+        if (typeof updates === 'object') {
+            return Object.entries(updates);
+        }
+
+        return [];
+    }
+
+    applyFallbackParameters(visualizer, applied) {
+        if (!visualizer || !visualizer.variantParams) {
+            return;
+        }
+
+        Object.entries(applied).forEach(([param, value]) => {
+            visualizer.variantParams[param] = value;
+            if (param === 'geometryType') {
+                visualizer.roleParams = visualizer.generateRoleParams(visualizer.role);
+            }
+        });
+
+        if (typeof visualizer.render === 'function') {
+            visualizer.render();
+        }
     }
     
     // Override updateVariant to preserve custom parameters
@@ -217,20 +253,26 @@ export class RealHolographicSystem {
     }
     
     getCurrentVariantInfo() {
+        const geometryType = this.variantGeometryMap[this.currentVariant] ?? 0;
+        const coreType = this.variantCoreMap[this.currentVariant] ?? 0;
         return {
             variant: this.currentVariant,
             name: this.variantNames[this.currentVariant],
-            geometryType: Math.floor(this.currentVariant / 4)
+            geometryType,
+            coreType
         };
     }
-    
+
     /**
      * Get current parameters for saving/export (CRITICAL for gallery saving)
      */
     getParameters() {
         // Collect parameters from UI sliders - same as other systems
+        const geometryType = this.variantGeometryMap[this.currentVariant] ?? 0;
+        const coreType = this.variantCoreMap[this.currentVariant] ?? 0;
         const params = {
-            geometry: Math.floor(this.currentVariant / 4), // Extract geometry from variant
+            geometry: geometryType,
+            geometryCore: coreType,
             gridDensity: parseFloat(document.getElementById('gridDensity')?.value || 15),
             morphFactor: parseFloat(document.getElementById('morphFactor')?.value || 1.0),
             chaos: parseFloat(document.getElementById('chaos')?.value || 0.2),
@@ -238,6 +280,9 @@ export class RealHolographicSystem {
             hue: parseFloat(document.getElementById('hue')?.value || 320),
             intensity: parseFloat(document.getElementById('intensity')?.value || 0.6),
             saturation: parseFloat(document.getElementById('saturation')?.value || 0.8),
+            rot4dXY: parseFloat(document.getElementById('rot4dXY')?.value || 0.0),
+            rot4dXZ: parseFloat(document.getElementById('rot4dXZ')?.value || 0.0),
+            rot4dYZ: parseFloat(document.getElementById('rot4dYZ')?.value || 0.0),
             rot4dXW: parseFloat(document.getElementById('rot4dXW')?.value || 0.0),
             rot4dYW: parseFloat(document.getElementById('rot4dYW')?.value || 0.0),
             rot4dZW: parseFloat(document.getElementById('rot4dZW')?.value || 0.0),
@@ -296,6 +341,12 @@ export class RealHolographicSystem {
             this.analyser = null;
             this.frequencyData = null;
             this.audioData = { bass: 0, mid: 0, high: 0 };
+            this.audioRotationXY = 0;
+            this.audioRotationXZ = 0;
+            this.audioRotationYZ = 0;
+            this.audioRotationXW = 0;
+            this.audioRotationYW = 0;
+            this.audioRotationZW = 0;
             console.log('🎵 REAL Holograms audio reactivity disabled');
         }
     }
@@ -395,6 +446,27 @@ export class RealHolographicSystem {
                 let currentValue = 0;
                 
                 switch (param) {
+                    case 'rot4dXY':
+                        // Movement: Rhythm-guided XY rotation
+                        if (!this.audioRotationXY) this.audioRotationXY = 0;
+                        this.audioRotationXY += rhythmIntensity * 0.09;
+                        currentValue = this.audioRotationXY % (Math.PI * 2);
+                        break;
+
+                    case 'rot4dXZ':
+                        // Movement: Energy-weighted XZ rotation
+                        if (!this.audioRotationXZ) this.audioRotationXZ = 0;
+                        this.audioRotationXZ += audioIntensity * 0.07;
+                        currentValue = this.audioRotationXZ % (Math.PI * 2);
+                        break;
+
+                    case 'rot4dYZ':
+                        // Movement: Mid/high hybrid YZ rotation
+                        if (!this.audioRotationYZ) this.audioRotationYZ = 0;
+                        this.audioRotationYZ += (audioData.mid + audioData.high) * sensitivityMultiplier * 0.05;
+                        currentValue = this.audioRotationYZ % (Math.PI * 2);
+                        break;
+
                     case 'hue':
                         // Color: Audio-reactive hue cycling
                         if (!this.audioHueBase) this.audioHueBase = 320;

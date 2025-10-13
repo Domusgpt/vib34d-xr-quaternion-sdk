@@ -1,3 +1,5 @@
+import { GeometryLibrary } from '../geometry/GeometryLibrary.js';
+
 /**
  * VIB34D Parameter Management System
  * Unified parameter control for both holographic and polytopal systems
@@ -9,10 +11,13 @@ export class ParameterManager {
         this.params = {
             // Current variation
             variation: 0,
-            
+
             // 4D Polytopal Mathematics
+            rot4dXY: 0.0,      // X-Y plane rotation
+            rot4dXZ: 0.0,      // X-Z plane rotation
+            rot4dYZ: 0.0,      // Y-Z plane rotation
             rot4dXW: 0.0,      // X-W plane rotation (-2 to 2)
-            rot4dYW: 0.0,      // Y-W plane rotation (-2 to 2) 
+            rot4dYW: 0.0,      // Y-W plane rotation (-2 to 2)
             rot4dZW: 0.0,      // Z-W plane rotation (-2 to 2)
             dimension: 3.5,    // Dimensional level (3.0 to 4.5)
             
@@ -24,17 +29,22 @@ export class ParameterManager {
             hue: 200,          // Color rotation (0 to 360)
             intensity: 0.5,    // Visual intensity (0 to 1)
             saturation: 0.8,   // Color saturation (0 to 1)
-            
+
             // Geometry selection
-            geometry: 0        // Current geometry type (0-7)
+            geometry: 0,       // Current geometry type (0-23)
+            geometryBase: 0,
+            geometryCore: 0
         };
-        
+
         // Parameter definitions for validation and UI
         this.parameterDefs = {
             variation: { min: 0, max: 99, step: 1, type: 'int' },
-            rot4dXW: { min: -2, max: 2, step: 0.01, type: 'float' },
-            rot4dYW: { min: -2, max: 2, step: 0.01, type: 'float' },
-            rot4dZW: { min: -2, max: 2, step: 0.01, type: 'float' },
+            rot4dXY: { min: -6.28, max: 6.28, step: 0.01, type: 'float' },
+            rot4dXZ: { min: -6.28, max: 6.28, step: 0.01, type: 'float' },
+            rot4dYZ: { min: -6.28, max: 6.28, step: 0.01, type: 'float' },
+            rot4dXW: { min: -6.28, max: 6.28, step: 0.01, type: 'float' },
+            rot4dYW: { min: -6.28, max: 6.28, step: 0.01, type: 'float' },
+            rot4dZW: { min: -6.28, max: 6.28, step: 0.01, type: 'float' },
             dimension: { min: 3.0, max: 4.5, step: 0.01, type: 'float' },
             gridDensity: { min: 4, max: 100, step: 0.1, type: 'float' },
             morphFactor: { min: 0, max: 2, step: 0.01, type: 'float' },
@@ -43,9 +53,16 @@ export class ParameterManager {
             hue: { min: 0, max: 360, step: 1, type: 'int' },
             intensity: { min: 0, max: 1, step: 0.01, type: 'float' },
             saturation: { min: 0, max: 1, step: 0.01, type: 'float' },
-            geometry: { min: 0, max: 7, step: 1, type: 'int' }
+            geometry: { min: 0, max: GeometryLibrary.getGeometryNames().length - 1, step: 1, type: 'int' },
+            geometryBase: { min: 0, max: GeometryLibrary.baseGeometries.length - 1, step: 1, type: 'int' },
+            geometryCore: { min: 0, max: GeometryLibrary.coreVariants.length - 1, step: 1, type: 'int' }
         };
-        
+
+        this.suppressGeometryComponentSync = false;
+        this.suppressGeometryIndexSync = false;
+
+        this.syncDerivedGeometryFields();
+
         // Default parameter backup for reset
         this.defaults = { ...this.params };
     }
@@ -63,29 +80,56 @@ export class ParameterManager {
     setParameter(name, value) {
         if (this.parameterDefs[name]) {
             const def = this.parameterDefs[name];
-            
+
             // Clamp value to valid range
             value = Math.max(def.min, Math.min(def.max, value));
-            
+
             // Apply type conversion
             if (def.type === 'int') {
                 value = Math.round(value);
             }
-            
+
             this.params[name] = value;
+
+            if (name === 'geometry') {
+                if (!this.suppressGeometryComponentSync) {
+                    this.syncDerivedGeometryFields();
+                }
+            } else if ((name === 'geometryBase' || name === 'geometryCore') && !this.suppressGeometryIndexSync) {
+                this.syncGeometryFromComponents();
+            }
+
             return true;
         }
-        
+
         console.warn(`Unknown parameter: ${name}`);
         return false;
     }
-    
+
     /**
      * Set multiple parameters at once
      */
-    setParameters(paramObj) {
+    setParameters(paramObj = {}) {
+        if (paramObj === null || typeof paramObj !== 'object') {
+            return;
+        }
+
+        const hasGeometry = Object.prototype.hasOwnProperty.call(paramObj, 'geometry');
+
+        if (hasGeometry) {
+            this.setGeometry(paramObj.geometry);
+        }
+
         for (const [name, value] of Object.entries(paramObj)) {
+            if (name === 'geometry') {
+                continue;
+            }
             this.setParameter(name, value);
+        }
+
+        if (hasGeometry && (!Object.prototype.hasOwnProperty.call(paramObj, 'geometryBase')
+            || !Object.prototype.hasOwnProperty.call(paramObj, 'geometryCore'))) {
+            this.syncDerivedGeometryFields();
         }
     }
     
@@ -102,13 +146,47 @@ export class ParameterManager {
     setGeometry(geometryType) {
         this.setParameter('geometry', geometryType);
     }
+
+    syncDerivedGeometryFields() {
+        const geometryIndex = this.params.geometry ?? 0;
+        const description = GeometryLibrary.describeGeometry(geometryIndex);
+        if (!description) {
+            return;
+        }
+
+        this.suppressGeometryIndexSync = true;
+        this.setParameter('geometryBase', description.baseIndex);
+        this.setParameter('geometryCore', description.coreIndex);
+        this.suppressGeometryIndexSync = false;
+    }
+
+    syncGeometryFromComponents() {
+        const baseCount = GeometryLibrary.baseGeometries.length;
+        const coreCount = GeometryLibrary.coreVariants.length;
+
+        if (!baseCount || !coreCount) {
+            return;
+        }
+
+        const baseIndex = Math.max(0, Math.min(baseCount - 1, Math.round(this.params.geometryBase ?? 0)));
+        const coreIndex = Math.max(0, Math.min(coreCount - 1, Math.round(this.params.geometryCore ?? 0)));
+
+        const computedGeometry = coreIndex * baseCount + baseIndex;
+        if (this.params.geometry === computedGeometry) {
+            return;
+        }
+
+        this.suppressGeometryComponentSync = true;
+        this.setParameter('geometry', computedGeometry);
+        this.suppressGeometryComponentSync = false;
+    }
     
     /**
      * Update parameters from UI controls
      */
     updateFromControls() {
         const controlIds = [
-            'variationSlider', 'rot4dXW', 'rot4dYW', 'rot4dZW', 'dimension',
+            'variationSlider', 'rot4dXY', 'rot4dXZ', 'rot4dYZ', 'rot4dXW', 'rot4dYW', 'rot4dZW', 'dimension',
             'gridDensity', 'morphFactor', 'chaos', 'speed', 'hue'
         ];
         
@@ -134,6 +212,9 @@ export class ParameterManager {
     updateDisplayValues() {
         // Update slider values
         this.updateSliderValue('variationSlider', this.params.variation);
+        this.updateSliderValue('rot4dXY', this.params.rot4dXY);
+        this.updateSliderValue('rot4dXZ', this.params.rot4dXZ);
+        this.updateSliderValue('rot4dYZ', this.params.rot4dYZ);
         this.updateSliderValue('rot4dXW', this.params.rot4dXW);
         this.updateSliderValue('rot4dYW', this.params.rot4dYW);
         this.updateSliderValue('rot4dZW', this.params.rot4dZW);
@@ -145,6 +226,9 @@ export class ParameterManager {
         this.updateSliderValue('hue', this.params.hue);
         
         // Update display texts
+        this.updateDisplayText('rot4dXYDisplay', this.params.rot4dXY.toFixed(2));
+        this.updateDisplayText('rot4dXZDisplay', this.params.rot4dXZ.toFixed(2));
+        this.updateDisplayText('rot4dYZDisplay', this.params.rot4dYZ.toFixed(2));
         this.updateDisplayText('rot4dXWDisplay', this.params.rot4dXW.toFixed(2));
         this.updateDisplayText('rot4dYWDisplay', this.params.rot4dYW.toFixed(2));
         this.updateDisplayText('rot4dZWDisplay', this.params.rot4dZW.toFixed(2));
@@ -157,7 +241,7 @@ export class ParameterManager {
         
         // Update variation info
         this.updateVariationInfo();
-        
+
         // Update geometry preset buttons
         this.updateGeometryButtons();
     }
@@ -179,18 +263,17 @@ export class ParameterManager {
     updateVariationInfo() {
         const variationDisplay = document.getElementById('currentVariationDisplay');
         if (variationDisplay) {
-            const geometryNames = [
-                'TETRAHEDRON LATTICE', 'HYPERCUBE LATTICE', 'SPHERE LATTICE', 'TORUS LATTICE',
-                'KLEIN BOTTLE LATTICE', 'FRACTAL LATTICE', 'WAVE LATTICE', 'CRYSTAL LATTICE'
-            ];
-            
-            const geometryType = Math.floor(this.params.variation / 4);
-            const geometryLevel = (this.params.variation % 4) + 1;
-            const geometryName = geometryNames[geometryType] || 'CUSTOM VARIATION';
-            
-            variationDisplay.textContent = `${this.params.variation + 1} - ${geometryName}`;
-            
+            const geometryIndex = Math.max(0, Math.floor(this.params.geometry));
+            const description = GeometryLibrary.describeGeometry(geometryIndex);
+            const baseLabel = description?.baseName || 'CUSTOM VARIATION';
+            const coreLabel = description && description.coreIndex > 0
+                ? ` • ${description.coreName}`
+                : '';
+
+            variationDisplay.textContent = `${this.params.variation + 1} - ${baseLabel}${coreLabel}`;
+
             if (this.params.variation < 30) {
+                const geometryLevel = (this.params.variation % 4) + 1;
                 variationDisplay.textContent += ` ${geometryLevel}`;
             }
         }
@@ -206,6 +289,9 @@ export class ParameterManager {
      * Randomize all parameters
      */
     randomizeAll() {
+        this.params.rot4dXY = Math.random() * 4 - 2;
+        this.params.rot4dXZ = Math.random() * 4 - 2;
+        this.params.rot4dYZ = Math.random() * 4 - 2;
         this.params.rot4dXW = Math.random() * 4 - 2;
         this.params.rot4dYW = Math.random() * 4 - 2;
         this.params.rot4dZW = Math.random() * 4 - 2;
@@ -215,7 +301,7 @@ export class ParameterManager {
         this.params.chaos = Math.random();
         this.params.speed = 0.1 + Math.random() * 2.9;
         this.params.hue = Math.random() * 360;
-        this.params.geometry = Math.floor(Math.random() * 8);
+        this.setGeometry(Math.floor(Math.random() * GeometryLibrary.getGeometryNames().length));
     }
     
     /**
@@ -223,6 +309,7 @@ export class ParameterManager {
      */
     resetToDefaults() {
         this.params = { ...this.defaults };
+        this.syncDerivedGeometryFields();
     }
     
     /**
@@ -270,6 +357,9 @@ export class ParameterManager {
                 chaos: level * 0.15,
                 speed: 0.8 + (level * 0.2),
                 hue: (geometryType * 45 + level * 15) % 360,
+                rot4dXY: (level - 1.5) * 0.35,
+                rot4dXZ: ((geometryType % 4) - 1.5) * 0.3,
+                rot4dYZ: (((geometryType + level) % 4) - 1.5) * 0.25,
                 rot4dXW: (level - 1.5) * 0.5,
                 rot4dYW: (geometryType % 2) * 0.3,
                 rot4dZW: ((geometryType + level) % 3) * 0.2,
