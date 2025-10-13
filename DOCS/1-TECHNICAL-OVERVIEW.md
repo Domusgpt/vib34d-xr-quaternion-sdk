@@ -95,14 +95,17 @@ Each engine represents a different mathematical and visual approach:
 - Glassmorphic rendering style
 - Advanced projection algorithms
 
-### 2. Parameter System (11 Core Parameters)
+### 2. Parameter System (13 Core Parameters)
 
 ```javascript
 {
-  geometry: 0-7,           // 8 different geometric forms
-  rot4dXW: -6.28 to 6.28,  // 4D rotation in XW plane
-  rot4dYW: -6.28 to 6.28,  // 4D rotation in YW plane
-  rot4dZW: -6.28 to 6.28,  // 4D rotation in ZW plane
+  geometry: 0-23,          // 24 geometry variants (8 base × hypersphere × hypertetra)
+  rot4dXY: -2.0 to 2.0,    // 4D rotation across XY plane coupling
+  rot4dXZ: -2.0 to 2.0,    // 4D rotation across XZ plane coupling
+  rot4dYZ: -2.0 to 2.0,    // 4D rotation across YZ plane coupling
+  rot4dXW: -2.0 to 2.0,    // 4D rotation in XW plane
+  rot4dYW: -2.0 to 2.0,    // 4D rotation in YW plane
+  rot4dZW: -2.0 to 2.0,    // 4D rotation in ZW plane
   gridDensity: 5-100,      // Tessellation level
   morphFactor: 0-2,        // Shape transformation amount
   chaos: 0-1,              // Randomization factor

@@ -51,6 +51,9 @@ export class IntegratedHolographicVisualizer {
             intensity: 0.5,
             saturation: 0.8,
             dimension: 3.5,
+            rot4dXY: 0.0,
+            rot4dXZ: 0.0,
+            rot4dYZ: 0.0,
             rot4dXW: 0.0,
             rot4dYW: 0.0,
             rot4dZW: 0.0
@@ -177,6 +180,9 @@ uniform float u_hue;
 uniform float u_intensity;
 uniform float u_saturation;
 uniform float u_dimension;
+uniform float u_rot4dXY;
+uniform float u_rot4dXZ;
+uniform float u_rot4dYZ;
 uniform float u_rot4dXW;
 uniform float u_rot4dYW;
 uniform float u_rot4dZW;
@@ -185,6 +191,24 @@ uniform float u_clickIntensity;
 uniform float u_roleIntensity;
 
 // 4D rotation matrices
+mat4 rotateXY(float theta) {
+    float c = cos(theta);
+    float s = sin(theta);
+    return mat4(c, -s, 0.0, 0.0, s, c, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0);
+}
+
+mat4 rotateXZ(float theta) {
+    float c = cos(theta);
+    float s = sin(theta);
+    return mat4(c, 0.0, -s, 0.0, 0.0, 1.0, 0.0, 0.0, s, 0.0, c, 0.0, 0.0, 0.0, 0.0, 1.0);
+}
+
+mat4 rotateYZ(float theta) {
+    float c = cos(theta);
+    float s = sin(theta);
+    return mat4(1.0, 0.0, 0.0, 0.0, 0.0, c, -s, 0.0, 0.0, s, c, 0.0, 0.0, 0.0, 0.0, 1.0);
+}
+
 mat4 rotateXW(float theta) {
     float c = cos(theta);
     float s = sin(theta);
@@ -208,76 +232,153 @@ vec3 project4Dto3D(vec4 p) {
     return vec3(p.x * w, p.y * w, p.z * w);
 }
 
+float tetrahedronLattice(vec4 p, float gridScale) {
+    vec4 pos = fract(p * gridScale);
+    vec4 dist = min(pos, 1.0 - pos);
+    return min(min(dist.x, dist.y), min(dist.z, dist.w));
+}
+
+float hypercubeLattice(vec4 p, float gridScale) {
+    vec4 pos = fract(p * gridScale);
+    vec4 dist = min(pos, 1.0 - pos);
+    return min(min(dist.x, dist.y), min(dist.z, dist.w));
+}
+
+float sphereLattice(vec4 p, float gridScale) {
+    float r = length(p);
+    float spheres = abs(fract(r * gridScale) - 0.5) * 2.0;
+    float theta = atan(p.y, p.x);
+    float harmonics = sin(theta * 3.0) * 0.2;
+    return spheres + harmonics;
+}
+
+float torusLattice(vec4 p, float gridScale) {
+    float r1 = length(p.xy) - 2.0;
+    float torus = length(vec2(r1, p.z)) - 0.8;
+    float lattice = sin(p.x * gridScale) * sin(p.y * gridScale);
+    return torus + lattice * 0.3;
+}
+
+float kleinLattice(vec4 p, float gridScale) {
+    float u = atan(p.y, p.x);
+    float v = atan(p.w, p.z);
+    float dist = length(p) - 2.0;
+    float lattice = sin(u * gridScale) * sin(v * gridScale);
+    return dist + lattice * 0.4;
+}
+
+float fractalLattice(vec4 p, float gridScale) {
+    vec4 pos = fract(p * gridScale);
+    pos = abs(pos * 2.0 - 1.0);
+    return length(max(abs(pos) - 1.0, 0.0));
+}
+
+float waveLattice(vec4 p, float gridScale) {
+    float time = u_time * 0.001 * u_speed;
+    float wave1 = sin(p.x * gridScale + time);
+    float wave2 = sin(p.y * gridScale + time * 1.3);
+    float wave3 = sin(p.z * gridScale * 0.8 + time * 0.7);
+    return wave1 * wave2 * wave3;
+}
+
+float crystalLattice(vec4 p, float gridScale) {
+    vec4 pos = fract(p * gridScale) - 0.5;
+    return max(max(abs(pos.x), abs(pos.y)), max(abs(pos.z), abs(pos.w)));
+}
+
+float sampleBaseGeometry(int baseType, vec4 p, vec3 p3d, float gridScale) {
+    if (baseType == 0) return tetrahedronLattice(p, gridScale);
+    if (baseType == 1) return hypercubeLattice(p, gridScale);
+    if (baseType == 2) return sphereLattice(p, gridScale);
+    if (baseType == 3) return torusLattice(p, gridScale);
+    if (baseType == 4) return kleinLattice(p, gridScale);
+    if (baseType == 5) return fractalLattice(p, gridScale);
+    if (baseType == 6) return waveLattice(p, gridScale);
+    if (baseType == 7) return crystalLattice(p, gridScale);
+    return hypercubeLattice(p, gridScale);
+}
+
+float hypersphereVariant(float baseValue, vec4 p, vec3 p3d, float gridScale) {
+    float dimFactor = smoothstep(3.0, 4.5, u_dimension);
+    if (dimFactor < 0.01) {
+        return baseValue;
+    }
+
+    float radius3D = length(p3d);
+    float densityFactor = max(0.1, gridScale * 1.5);
+    float shellPhase = radius3D * densityFactor * 6.28318 - u_time * u_speed * 0.08;
+    float shells3D = smoothstep(0.25, 0.75, 0.5 + 0.5 * sin(shellPhase));
+
+    float wCoord = cos(radius3D * 1.8 - u_time * 0.55) *
+                   sin(dot(p3d, vec3(1.0, 1.3, -0.7)) + u_time * 0.2) *
+                   dimFactor * (0.5 + u_morphFactor * 0.5);
+
+    vec4 warped = vec4(p3d, p.w + wCoord);
+    warped = rotateXY(u_rot4dXY * 0.4) * rotateXZ(u_rot4dXZ * 0.45) * rotateYZ(u_rot4dYZ * 0.35) * warped;
+    warped = rotateXW(u_rot4dXW * 0.6) * rotateYW(u_rot4dYW * 0.5) * rotateZW(u_rot4dZW * 0.55) * warped;
+
+    vec3 projected = project4Dto3D(warped);
+    float radiusProj = length(projected);
+    float shellProj = smoothstep(0.25, 0.75, 0.5 + 0.5 * sin(radiusProj * densityFactor * 6.28318 - u_time * u_speed * 0.08));
+
+    float mixFactor = dimFactor * clamp(u_morphFactor, 0.0, 1.0);
+    float shellMix = mix(shells3D, shellProj, 0.5 + 0.5 * u_morphFactor);
+    return mix(baseValue, shellMix, mixFactor);
+}
+
+float hypertetraVariant(float baseValue, vec4 p, vec3 p3d, float gridScale) {
+    float dimFactor = smoothstep(3.0, 4.5, u_dimension);
+    if (dimFactor < 0.01) {
+        return baseValue;
+    }
+
+    vec3 c1 = normalize(vec3(1.0, 1.0, 1.0));
+    vec3 c2 = normalize(vec3(-1.0, -1.0, 1.0));
+    vec3 c3 = normalize(vec3(-1.0, 1.0, -1.0));
+    vec3 c4 = normalize(vec3(1.0, -1.0, -1.0));
+
+    vec3 cell3D = fract(p3d * gridScale * 0.5 + 0.5 + u_time * 0.005) - 0.5;
+    float planes3D = min(min(abs(dot(cell3D, c1)), abs(dot(cell3D, c2))),
+                        min(abs(dot(cell3D, c3)), abs(dot(cell3D, c4))));
+    float lattice3D = 1.0 - smoothstep(0.0, 0.08 + u_morphFactor * 0.05, planes3D);
+
+    float wCoord = cos(dot(p3d, vec3(1.8, -1.5, 1.2)) + u_time * 0.24) *
+                   sin(length(p3d) * 1.4 + u_time * 0.18) *
+                   dimFactor * (0.45 + u_morphFactor * 0.55);
+
+    vec4 warped = vec4(p3d, p.w + wCoord);
+    warped = rotateXY(u_rot4dXY * 0.5) * rotateXZ(u_rot4dXZ * 0.35) * rotateYZ(u_rot4dYZ * 0.45) * warped;
+    warped = rotateXW(u_rot4dXW * 0.55) * rotateYW(u_rot4dYW * 0.65) * rotateZW(u_rot4dZW * 0.5) * warped;
+
+    vec3 projected = project4Dto3D(warped);
+    vec3 cell4D = fract(projected * gridScale * 0.5 + 0.5 + u_time * 0.008) - 0.5;
+    float planes4D = min(min(abs(dot(cell4D, c1)), abs(dot(cell4D, c2))),
+                        min(abs(dot(cell4D, c3)), abs(dot(cell4D, c4))));
+    float lattice4D = 1.0 - smoothstep(0.0, 0.08 + u_morphFactor * 0.05, planes4D);
+
+    float mixFactor = dimFactor * clamp(u_morphFactor, 0.0, 1.0);
+    float tetraMix = mix(lattice3D, lattice4D, 0.5 + 0.5 * u_morphFactor);
+    return mix(baseValue, tetraMix, mixFactor);
+}
+
 // Simplified geometry functions for WebGL 1.0 compatibility (ORIGINAL FACETED)
 float geometryFunction(vec4 p) {
-    int geomType = int(u_geometry);
-    
-    if (geomType == 0) {
-        // Tetrahedron lattice - UNIFORM GRID DENSITY
-        vec4 pos = fract(p * u_gridDensity * 0.08);
-        vec4 dist = min(pos, 1.0 - pos);
-        return min(min(dist.x, dist.y), min(dist.z, dist.w)) * u_morphFactor;
+    int geomIndex = int(u_geometry + 0.5);
+    int variant = geomIndex / 8;
+    int baseIndex = geomIndex - variant * 8;
+
+    vec3 p3d = project4Dto3D(p);
+    float gridScale = u_gridDensity * 0.08;
+    float baseValue = sampleBaseGeometry(baseIndex, p, p3d, gridScale) * u_morphFactor;
+
+    if (variant == 1) {
+        return hypersphereVariant(baseValue, p, p3d, gridScale);
     }
-    else if (geomType == 1) {
-        // Hypercube lattice - UNIFORM GRID DENSITY
-        vec4 pos = fract(p * u_gridDensity * 0.08);
-        vec4 dist = min(pos, 1.0 - pos);
-        float minDist = min(min(dist.x, dist.y), min(dist.z, dist.w));
-        return minDist * u_morphFactor;
+    if (variant == 2) {
+        return hypertetraVariant(baseValue, p, p3d, gridScale);
     }
-    else if (geomType == 2) {
-        // Sphere lattice - UNIFORM GRID DENSITY
-        float r = length(p);
-        float density = u_gridDensity * 0.08;
-        float spheres = abs(fract(r * density) - 0.5) * 2.0;
-        float theta = atan(p.y, p.x);
-        float harmonics = sin(theta * 3.0) * 0.2;
-        return (spheres + harmonics) * u_morphFactor;
-    }
-    else if (geomType == 3) {
-        // Torus lattice - UNIFORM GRID DENSITY
-        float r1 = length(p.xy) - 2.0;
-        float torus = length(vec2(r1, p.z)) - 0.8;
-        float lattice = sin(p.x * u_gridDensity * 0.08) * sin(p.y * u_gridDensity * 0.08);
-        return (torus + lattice * 0.3) * u_morphFactor;
-    }
-    else if (geomType == 4) {
-        // Klein bottle lattice - UNIFORM GRID DENSITY
-        float u = atan(p.y, p.x);
-        float v = atan(p.w, p.z);
-        float dist = length(p) - 2.0;
-        float lattice = sin(u * u_gridDensity * 0.08) * sin(v * u_gridDensity * 0.08);
-        return (dist + lattice * 0.4) * u_morphFactor;
-    }
-    else if (geomType == 5) {
-        // Fractal lattice - NOW WITH UNIFORM GRID DENSITY
-        vec4 pos = fract(p * u_gridDensity * 0.08);
-        pos = abs(pos * 2.0 - 1.0);
-        float dist = length(max(abs(pos) - 1.0, 0.0));
-        return dist * u_morphFactor;
-    }
-    else if (geomType == 6) {
-        // Wave lattice - UNIFORM GRID DENSITY
-        float freq = u_gridDensity * 0.08;
-        float time = u_time * 0.001 * u_speed;
-        float wave1 = sin(p.x * freq + time);
-        float wave2 = sin(p.y * freq + time * 1.3);
-        float wave3 = sin(p.z * freq * 0.8 + time * 0.7); // Add Z-dimension waves
-        float interference = wave1 * wave2 * wave3;
-        return interference * u_morphFactor;
-    }
-    else if (geomType == 7) {
-        // Crystal lattice - UNIFORM GRID DENSITY
-        vec4 pos = fract(p * u_gridDensity * 0.08) - 0.5;
-        float cube = max(max(abs(pos.x), abs(pos.y)), max(abs(pos.z), abs(pos.w)));
-        return cube * u_morphFactor;
-    }
-    else {
-        // Default hypercube - UNIFORM GRID DENSITY
-        vec4 pos = fract(p * u_gridDensity * 0.08);
-        vec4 dist = min(pos, 1.0 - pos);
-        return min(min(dist.x, dist.y), min(dist.z, dist.w)) * u_morphFactor;
-    }
+
+    return baseValue;
 }
 
 void main() {
@@ -288,7 +389,10 @@ void main() {
     vec4 pos = vec4(uv * 3.0, sin(timeSpeed * 3.0), cos(timeSpeed * 2.0));
     pos.xy += (u_mouse - 0.5) * u_mouseIntensity * 2.0;
     
-    // Apply 4D rotations
+    // Apply 4D rotations across all planes
+    pos = rotateXY(u_rot4dXY) * pos;
+    pos = rotateXZ(u_rot4dXZ) * pos;
+    pos = rotateYZ(u_rot4dYZ) * pos;
     pos = rotateXW(u_rot4dXW) * pos;
     pos = rotateYW(u_rot4dYW) * pos;
     pos = rotateZW(u_rot4dZW) * pos;
@@ -337,6 +441,9 @@ void main() {
             intensity: this.gl.getUniformLocation(this.program, 'u_intensity'),
             saturation: this.gl.getUniformLocation(this.program, 'u_saturation'),
             dimension: this.gl.getUniformLocation(this.program, 'u_dimension'),
+            rot4dXY: this.gl.getUniformLocation(this.program, 'u_rot4dXY'),
+            rot4dXZ: this.gl.getUniformLocation(this.program, 'u_rot4dXZ'),
+            rot4dYZ: this.gl.getUniformLocation(this.program, 'u_rot4dYZ'),
             rot4dXW: this.gl.getUniformLocation(this.program, 'u_rot4dXW'),
             rot4dYW: this.gl.getUniformLocation(this.program, 'u_rot4dYW'),
             rot4dZW: this.gl.getUniformLocation(this.program, 'u_rot4dZW'),
@@ -521,7 +628,7 @@ void main() {
     /**
      * Update visualization parameters
      */
-    updateParameters(params) {
+    updateParameters(params, context = {}) {
         this.params = { ...this.params, ...params };
     }
     
@@ -611,6 +718,9 @@ void main() {
         this.gl.uniform1f(this.uniforms.intensity, Math.min(1, intensity));
         this.gl.uniform1f(this.uniforms.saturation, this.params.saturation);
         this.gl.uniform1f(this.uniforms.dimension, this.params.dimension);
+        this.gl.uniform1f(this.uniforms.rot4dXY, this.params.rot4dXY);
+        this.gl.uniform1f(this.uniforms.rot4dXZ, this.params.rot4dXZ);
+        this.gl.uniform1f(this.uniforms.rot4dYZ, this.params.rot4dYZ);
         this.gl.uniform1f(this.uniforms.rot4dXW, this.params.rot4dXW);
         this.gl.uniform1f(this.uniforms.rot4dYW, this.params.rot4dYW);
         this.gl.uniform1f(this.uniforms.rot4dZW, this.params.rot4dZW);

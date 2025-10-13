@@ -63,6 +63,9 @@ export class QuantumHolographicVisualizer {
             intensity: 0.5,
             saturation: 0.8,
             dimension: 3.5,
+            rot4dXY: 0.0,
+            rot4dXZ: 0.0,
+            rot4dYZ: 0.0,
             rot4dXW: 0.0,
             rot4dYW: 0.0,
             rot4dZW: 0.0
@@ -243,6 +246,9 @@ uniform float u_hue;
 uniform float u_intensity;
 uniform float u_saturation;
 uniform float u_dimension;
+uniform float u_rot4dXY;
+uniform float u_rot4dXZ;
+uniform float u_rot4dYZ;
 uniform float u_rot4dXW;
 uniform float u_rot4dYW;
 uniform float u_rot4dZW;
@@ -251,6 +257,24 @@ uniform float u_clickIntensity;
 uniform float u_roleIntensity;
 
 // 4D rotation matrices
+mat4 rotateXY(float theta) {
+    float c = cos(theta);
+    float s = sin(theta);
+    return mat4(c, -s, 0.0, 0.0, s, c, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0);
+}
+
+mat4 rotateXZ(float theta) {
+    float c = cos(theta);
+    float s = sin(theta);
+    return mat4(c, 0.0, -s, 0.0, 0.0, 1.0, 0.0, 0.0, s, 0.0, c, 0.0, 0.0, 0.0, 0.0, 1.0);
+}
+
+mat4 rotateYZ(float theta) {
+    float c = cos(theta);
+    float s = sin(theta);
+    return mat4(1.0, 0.0, 0.0, 0.0, 0.0, c, -s, 0.0, 0.0, s, c, 0.0, 0.0, 0.0, 0.0, 1.0);
+}
+
 mat4 rotateXW(float theta) {
     float c = cos(theta);
     float s = sin(theta);
@@ -390,39 +414,99 @@ float crystalLattice(vec3 p, float gridSize) {
     return max(crystal, faces * 0.5);
 }
 
+float sampleQuantumGeometry(int baseType, vec3 p3d, float gridSize) {
+    if (baseType == 0) return tetrahedronLattice(p3d, gridSize);
+    if (baseType == 1) return hypercubeLattice(p3d, gridSize);
+    if (baseType == 2) return sphereLattice(p3d, gridSize);
+    if (baseType == 3) return torusLattice(p3d, gridSize);
+    if (baseType == 4) return kleinLattice(p3d, gridSize);
+    if (baseType == 5) return fractalLattice(p3d, gridSize);
+    if (baseType == 6) return waveLattice(p3d, gridSize);
+    if (baseType == 7) return crystalLattice(p3d, gridSize);
+    return hypercubeLattice(p3d, gridSize);
+}
+
+float hypersphereQuantumVariant(float baseValue, vec4 p, vec3 p3d, float gridSize) {
+    float dimFactor = smoothstep(3.0, 4.5, u_dimension);
+    if (dimFactor < 0.01) {
+        return baseValue;
+    }
+
+    float radius3D = length(p3d);
+    float densityFactor = max(0.1, gridSize * 1.6);
+    float shellPhase = radius3D * densityFactor * 6.28318 - u_time * u_speed * 0.12;
+    float shells3D = smoothstep(0.2, 0.8, 0.5 + 0.5 * sin(shellPhase));
+
+    float wCoord = cos(radius3D * 2.1 - u_time * 0.45) *
+                   sin(dot(p3d, vec3(0.9, 1.2, -0.8)) + u_time * 0.3) *
+                   dimFactor * (0.5 + u_morphFactor * 0.6);
+
+    vec4 warped = vec4(p3d, p.w + wCoord);
+    warped = rotateXY(u_rot4dXY * 0.45) * rotateXZ(u_rot4dXZ * 0.4) * rotateYZ(u_rot4dYZ * 0.5) * warped;
+    warped = rotateXW(u_rot4dXW * 0.7) * rotateYW(u_rot4dYW * 0.55) * rotateZW(u_rot4dZW * 0.6) * warped;
+
+    vec3 projected = project4Dto3D(warped);
+    float radiusProj = length(projected);
+    float shellProj = smoothstep(0.2, 0.8, 0.5 + 0.5 * sin(radiusProj * densityFactor * 6.28318 - u_time * u_speed * 0.12));
+
+    float mixFactor = dimFactor * clamp(u_morphFactor, 0.0, 1.0);
+    float shellMix = mix(shells3D, shellProj, 0.5 + 0.5 * u_morphFactor);
+    return mix(baseValue, shellMix, mixFactor);
+}
+
+float hypertetraQuantumVariant(float baseValue, vec4 p, vec3 p3d, float gridSize) {
+    float dimFactor = smoothstep(3.0, 4.5, u_dimension);
+    if (dimFactor < 0.01) {
+        return baseValue;
+    }
+
+    vec3 c1 = normalize(vec3(1.0, 1.0, 1.0));
+    vec3 c2 = normalize(vec3(-1.0, -1.0, 1.0));
+    vec3 c3 = normalize(vec3(-1.0, 1.0, -1.0));
+    vec3 c4 = normalize(vec3(1.0, -1.0, -1.0));
+
+    vec3 cell3D = fract(p3d * gridSize * 0.45 + 0.5 + u_time * 0.006) - 0.5;
+    float planes3D = min(min(abs(dot(cell3D, c1)), abs(dot(cell3D, c2))),
+                        min(abs(dot(cell3D, c3)), abs(dot(cell3D, c4))));
+    float lattice3D = 1.0 - smoothstep(0.0, 0.06 + u_morphFactor * 0.04, planes3D);
+
+    float wCoord = cos(dot(p3d, vec3(1.6, -1.4, 1.3)) + u_time * 0.35) *
+                   sin(length(p3d) * 1.6 + u_time * 0.22) *
+                   dimFactor * (0.4 + u_morphFactor * 0.6);
+
+    vec4 warped = vec4(p3d, p.w + wCoord);
+    warped = rotateXY(u_rot4dXY * 0.55) * rotateXZ(u_rot4dXZ * 0.5) * rotateYZ(u_rot4dYZ * 0.45) * warped;
+    warped = rotateXW(u_rot4dXW * 0.6) * rotateYW(u_rot4dYW * 0.7) * rotateZW(u_rot4dZW * 0.65) * warped;
+
+    vec3 projected = project4Dto3D(warped);
+    vec3 cell4D = fract(projected * gridSize * 0.45 + 0.5 + u_time * 0.01) - 0.5;
+    float planes4D = min(min(abs(dot(cell4D, c1)), abs(dot(cell4D, c2))),
+                        min(abs(dot(cell4D, c3)), abs(dot(cell4D, c4))));
+    float lattice4D = 1.0 - smoothstep(0.0, 0.06 + u_morphFactor * 0.04, planes4D);
+
+    float mixFactor = dimFactor * clamp(u_morphFactor, 0.0, 1.0);
+    float tetraMix = mix(lattice3D, lattice4D, 0.5 + 0.5 * u_morphFactor);
+    return mix(baseValue, tetraMix, mixFactor);
+}
+
 // Enhanced geometry function with holographic effects
 float geometryFunction(vec4 p) {
-    int geomType = int(u_geometry);
+    int geomIndex = int(u_geometry + 0.5);
+    int variant = geomIndex / 8;
+    int baseIndex = geomIndex - variant * 8;
+
     vec3 p3d = project4Dto3D(p);
     float gridSize = u_gridDensity * 0.08;
-    
-    if (geomType == 0) {
-        return tetrahedronLattice(p3d, gridSize) * u_morphFactor;
+    float baseValue = sampleQuantumGeometry(baseIndex, p3d, gridSize) * u_morphFactor;
+
+    if (variant == 1) {
+        return hypersphereQuantumVariant(baseValue, p, p3d, gridSize);
     }
-    else if (geomType == 1) {
-        return hypercubeLattice(p3d, gridSize) * u_morphFactor;
+    if (variant == 2) {
+        return hypertetraQuantumVariant(baseValue, p, p3d, gridSize);
     }
-    else if (geomType == 2) {
-        return sphereLattice(p3d, gridSize) * u_morphFactor;
-    }
-    else if (geomType == 3) {
-        return torusLattice(p3d, gridSize) * u_morphFactor;
-    }
-    else if (geomType == 4) {
-        return kleinLattice(p3d, gridSize) * u_morphFactor;
-    }
-    else if (geomType == 5) {
-        return fractalLattice(p3d, gridSize) * u_morphFactor;
-    }
-    else if (geomType == 6) {
-        return waveLattice(p3d, gridSize) * u_morphFactor;
-    }
-    else if (geomType == 7) {
-        return crystalLattice(p3d, gridSize) * u_morphFactor;
-    }
-    else {
-        return hypercubeLattice(p3d, gridSize) * u_morphFactor;
-    }
+
+    return baseValue;
 }
 
 // EXTREME LAYER-BY-LAYER COLOR SYSTEM
@@ -522,6 +606,9 @@ void main() {
     pos.xy += (u_mouse - 0.5) * u_mouseIntensity * 2.0;
     
     // Apply 4D rotations
+    pos = rotateXY(u_rot4dXY) * pos;
+    pos = rotateXZ(u_rot4dXZ) * pos;
+    pos = rotateYZ(u_rot4dYZ) * pos;
     pos = rotateXW(u_rot4dXW) * pos;
     pos = rotateYW(u_rot4dYW) * pos;
     pos = rotateZW(u_rot4dZW) * pos;
@@ -653,6 +740,9 @@ void main() {
             intensity: this.gl.getUniformLocation(this.program, 'u_intensity'),
             saturation: this.gl.getUniformLocation(this.program, 'u_saturation'),
             dimension: this.gl.getUniformLocation(this.program, 'u_dimension'),
+            rot4dXY: this.gl.getUniformLocation(this.program, 'u_rot4dXY'),
+            rot4dXZ: this.gl.getUniformLocation(this.program, 'u_rot4dXZ'),
+            rot4dYZ: this.gl.getUniformLocation(this.program, 'u_rot4dYZ'),
             rot4dXW: this.gl.getUniformLocation(this.program, 'u_rot4dXW'),
             rot4dYW: this.gl.getUniformLocation(this.program, 'u_rot4dYW'),
             rot4dZW: this.gl.getUniformLocation(this.program, 'u_rot4dZW'),
@@ -835,9 +925,9 @@ void main() {
     /**
      * Update visualization parameters with immediate GPU sync
      */
-    updateParameters(params) {
+    updateParameters(params, context = {}) {
         this.params = { ...this.params, ...params };
-        
+
         // Don't call render() here - engine will call it to prevent infinite loop
     }
     
@@ -919,6 +1009,9 @@ void main() {
         this.gl.uniform1f(this.uniforms.intensity, this.params.intensity);
         this.gl.uniform1f(this.uniforms.saturation, this.params.saturation);
         this.gl.uniform1f(this.uniforms.dimension, this.params.dimension);
+        this.gl.uniform1f(this.uniforms.rot4dXY, this.params.rot4dXY);
+        this.gl.uniform1f(this.uniforms.rot4dXZ, this.params.rot4dXZ);
+        this.gl.uniform1f(this.uniforms.rot4dYZ, this.params.rot4dYZ);
         this.gl.uniform1f(this.uniforms.rot4dXW, this.params.rot4dXW);
         this.gl.uniform1f(this.uniforms.rot4dYW, this.params.rot4dYW);
         this.gl.uniform1f(this.uniforms.rot4dZW, this.params.rot4dZW);

@@ -142,10 +142,13 @@ const paramManager = new ParameterManager();
 
 // Core parameters
 const defaultParams = {
-    geometry: 0,            // 0-7 geometry types
-    rot4dXW: 0.0,          // -6.28 to 6.28 radians
-    rot4dYW: 0.0,          // -6.28 to 6.28 radians
-    rot4dZW: 0.0,          // -6.28 to 6.28 radians
+    geometry: 0,            // 0-23 geometry variants (24 total)
+    rot4dXY: 0.0,          // -2.0 to 2.0 radians
+    rot4dXZ: 0.0,          // -2.0 to 2.0 radians
+    rot4dYZ: 0.0,          // -2.0 to 2.0 radians
+    rot4dXW: 0.0,          // -2.0 to 2.0 radians
+    rot4dYW: 0.0,          // -2.0 to 2.0 radians
+    rot4dZW: 0.0,          // -2.0 to 2.0 radians
     gridDensity: 15,       // 5-100 tessellation level
     morphFactor: 1.0,      // 0-2 transformation amount
     chaos: 0.2,            // 0-1 randomization factor
@@ -186,8 +189,8 @@ const status = tiltHandler.getStatus()  // Get current status
     sensitivity: number,
     smoothing: number,
     currentTilt: { alpha, beta, gamma },
-    smoothedRotation: { rot4dXW, rot4dYW, rot4dZW },
-    baseRotation: { rot4dXW, rot4dYW, rot4dZW }
+    smoothedRotation: { rot4dXY, rot4dXZ, rot4dYZ, rot4dXW, rot4dYW, rot4dZW },
+    baseRotation: { rot4dXY, rot4dXZ, rot4dYZ, rot4dXW, rot4dYW, rot4dZW }
 }
 ```
 
@@ -227,7 +230,7 @@ VIB34D exposes several global functions for UI integration:
 ```javascript
 // System Control
 switchSystem('faceted')                 // Switch visualization system
-selectGeometry(3)                       // Set geometry type (0-7)
+selectGeometry(3)                       // Set geometry type (0-23)
 updateParameter('hue', 240)             // Update any parameter
 randomizeAll()                          // Randomize all parameters
 resetAll()                              // Reset to defaults
