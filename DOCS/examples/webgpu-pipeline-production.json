@@ -1,0 +1,648 @@
+{
+  "layerTextures": [
+    {
+      "label": "glassmorphic-layer-0",
+      "format": "rgba16float"
+    },
+    {
+      "label": "glassmorphic-layer-1",
+      "format": "rgba16float"
+    },
+    {
+      "label": "glassmorphic-blur-h-0",
+      "format": "rgba16float"
+    },
+    {
+      "label": "glassmorphic-blur-v-0",
+      "format": "rgba16float"
+    },
+    {
+      "label": "glassmorphic-blur-h-1",
+      "format": "rgba16float"
+    },
+    {
+      "label": "glassmorphic-blur-v-1",
+      "format": "rgba16float"
+    }
+  ],
+  "frames": [
+    {
+      "index": 0,
+      "label": "Frame 1",
+      "timestampMs": 0,
+      "motionEnergy": 0.2,
+      "poseUniforms": [
+        [
+          1,
+          1.5,
+          -2,
+          0.9,
+          0,
+          0.2164,
+          0,
+          0.9763,
+          0,
+          0.2164,
+          0,
+          0.9763,
+          0.4363,
+          0,
+          0,
+          0.2,
+          0,
+          0,
+          0,
+          0,
+          1,
+          1.5,
+          -2,
+          0.85,
+          0,
+          0,
+          0,
+          0.65,
+          0,
+          0,
+          0,
+          0.5,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0.6,
+          0,
+          0,
+          0,
+          0.45,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0.4,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0.35,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0.35,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0.3
+        ]
+      ],
+      "matrixUniforms": [
+        [
+          0.9063,
+          0,
+          0.4226,
+          0,
+          0,
+          1,
+          0,
+          0,
+          -0.4226,
+          0,
+          0.9063,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      ],
+      "audioUniforms": [
+        [
+          0,
+          0.251,
+          0.7529,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      ],
+      "renderPasses": [
+        {
+          "target": "glassmorphic-layer-0-view",
+          "actions": [
+            {
+              "type": "executeBundles",
+              "details": [
+                [
+                  "glassmorphic-bundles-layer::0::bundle"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "target": "glassmorphic-blur-h-0-view",
+          "actions": [
+            {
+              "type": "executeBundles",
+              "details": [
+                [
+                  "glassmorphic-bundles-blur::0::horizontal::bundle"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "target": "glassmorphic-blur-v-0-view",
+          "actions": [
+            {
+              "type": "executeBundles",
+              "details": [
+                [
+                  "glassmorphic-bundles-blur::0::vertical::bundle"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "target": "glassmorphic-layer-1-view",
+          "actions": [
+            {
+              "type": "executeBundles",
+              "details": [
+                [
+                  "glassmorphic-bundles-layer::1::bundle"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "target": "final-target-view",
+          "actions": [
+            {
+              "type": "executeBundles",
+              "details": [
+                [
+                  "glassmorphic-bundles-composite::bundle"
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "label": "Frame 2",
+      "timestampMs": 16,
+      "motionEnergy": 0.35,
+      "poseUniforms": [
+        [
+          1.2,
+          1.6,
+          -1.8,
+          0.9,
+          0,
+          0.5,
+          0,
+          0.866,
+          0,
+          0.4733,
+          0,
+          0.8809,
+          1.0472,
+          0,
+          0,
+          0.35,
+          0.016,
+          0.016,
+          18.75,
+          1171.875,
+          1.17,
+          1.585,
+          -1.83,
+          0.85,
+          8.125,
+          4.0625,
+          8.125,
+          0.65,
+          390.625,
+          195.3125,
+          390.625,
+          0.5,
+          0,
+          38.1791,
+          0,
+          38.1791,
+          0,
+          2386.1924,
+          0,
+          2386.1924,
+          0,
+          22.9074,
+          0,
+          0.6,
+          0,
+          1073.7865,
+          0,
+          0.45,
+          48828.125,
+          24414.0625,
+          48828.125,
+          73242.1875,
+          19531.25,
+          9765.625,
+          19531.25,
+          0.4,
+          0,
+          149137.0156,
+          0,
+          149137.0156,
+          0,
+          52197.957,
+          0,
+          0.35,
+          3051757.75,
+          1525878.875,
+          3051757.75,
+          4577636.5,
+          1068115.25,
+          534057.625,
+          1068115.25,
+          0.35,
+          0,
+          9321064,
+          0,
+          9321064,
+          0,
+          2796319.25,
+          0,
+          0.3
+        ]
+      ],
+      "matrixUniforms": [
+        [
+          0.5,
+          0,
+          0.866,
+          0,
+          0,
+          1,
+          0,
+          0,
+          -0.866,
+          0,
+          0.5,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      ],
+      "audioUniforms": [
+        [
+          0.0627,
+          0.502,
+          0.8627,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      ],
+      "renderPasses": [
+        {
+          "target": "glassmorphic-layer-0-view",
+          "actions": [
+            {
+              "type": "executeBundles",
+              "details": [
+                [
+                  "glassmorphic-bundles-layer::0::bundle"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "target": "glassmorphic-blur-h-0-view",
+          "actions": [
+            {
+              "type": "executeBundles",
+              "details": [
+                [
+                  "glassmorphic-bundles-blur::0::horizontal::bundle"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "target": "glassmorphic-blur-v-0-view",
+          "actions": [
+            {
+              "type": "executeBundles",
+              "details": [
+                [
+                  "glassmorphic-bundles-blur::0::vertical::bundle"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "target": "glassmorphic-layer-1-view",
+          "actions": [
+            {
+              "type": "executeBundles",
+              "details": [
+                [
+                  "glassmorphic-bundles-layer::1::bundle"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "target": "final-target-view",
+          "actions": [
+            {
+              "type": "executeBundles",
+              "details": [
+                [
+                  "glassmorphic-bundles-composite::bundle"
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
