@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>WebGPU Glassmorphic Pipeline Snapshots</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: radial-gradient(circle at 20% 20%, rgba(35, 51, 90, 0.85), rgba(12, 16, 24, 0.95));
+      }
+      body {
+        margin: 0;
+        color: #f5f9ff;
+        min-height: 100vh;
+        background: inherit;
+      }
+      header {
+        padding: 48px clamp(24px, 4vw, 64px) 32px;
+        text-align: center;
+      }
+      header h1 {
+        margin: 0 0 16px;
+        font-weight: 700;
+        font-size: clamp(2rem, 5vw, 3.5rem);
+        letter-spacing: 0.02em;
+      }
+      header p {
+        margin: 0;
+        opacity: 0.8;
+        font-size: clamp(1rem, 2.5vw, 1.25rem);
+      }
+      main {
+        display: grid;
+        gap: clamp(24px, 3vw, 40px);
+        padding: 0 clamp(24px, 4vw, 72px) 72px;
+      }
+      section {
+        backdrop-filter: blur(22px);
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 28px;
+        padding: clamp(24px, 2.5vw, 32px);
+        box-shadow: 0 18px 40px rgba(8, 12, 24, 0.45);
+      }
+      h2 {
+        margin-top: 0;
+        font-size: clamp(1.4rem, 3vw, 1.9rem);
+        letter-spacing: 0.015em;
+      }
+      .grid {
+        display: grid;
+        gap: clamp(16px, 2vw, 24px);
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      }
+      .card {
+        background: rgba(18, 24, 40, 0.55);
+        border-radius: 22px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 18px clamp(18px, 2vw, 24px);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+      }
+      .card h3 {
+        margin: 0 0 12px;
+        font-size: 1.1rem;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        color: rgba(188, 208, 255, 0.9);
+      }
+      .card dl {
+        margin: 0;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 6px 14px;
+        font-size: 0.95rem;
+      }
+      .card dt {
+        opacity: 0.6;
+      }
+      .card dd {
+        margin: 0;
+        font-variant-numeric: tabular-nums;
+      }
+      .frames {
+        display: grid;
+        gap: clamp(14px, 2vw, 18px);
+        margin-top: clamp(16px, 2vw, 28px);
+      }
+      .frame {
+        border-radius: 20px;
+        padding: clamp(18px, 2vw, 24px);
+        background: linear-gradient(135deg, rgba(26, 48, 84, 0.65), rgba(10, 18, 32, 0.75));
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09);
+      }
+      .frame header {
+        padding: 0;
+        text-align: left;
+        margin-bottom: 12px;
+      }
+      .frame header h3 {
+        margin: 0;
+        font-size: 1.1rem;
+      }
+      .frame header span {
+        opacity: 0.6;
+        font-size: 0.85rem;
+      }
+      .metrics {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 18px;
+      }
+      .metric {
+        min-width: 120px;
+      }
+      .metric strong {
+        display: block;
+        font-size: 1.1rem;
+      }
+      .uniforms {
+        margin-top: 12px;
+        display: grid;
+        gap: 8px;
+      }
+      .uniforms code {
+        display: block;
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: rgba(10, 14, 24, 0.65);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        font-family: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+        font-size: 0.85rem;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .notice {
+        margin-top: 24px;
+        font-size: 0.9rem;
+        opacity: 0.7;
+      }
+      footer {
+        text-align: center;
+        padding: 32px;
+        opacity: 0.6;
+        font-size: 0.85rem;
+      }
+      @media (max-width: 600px) {
+        .metrics {
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>XR WebGPU Snapshot Gallery</h1>
+      <p>Glassmorphic pipeline diagnostics captured from the mock integration demos.</p>
+    </header>
+    <main>
+      <section id="pipeline">
+        <h2>Glassmorphic Pipeline Frames</h2>
+        <div class="grid" id="pipeline-metadata"></div>
+        <div class="frames" id="pipeline-frames"></div>
+      </section>
+      <section id="xr">
+        <h2>XR Frame Loop Views</h2>
+        <div class="grid" id="xr-metadata"></div>
+        <div class="frames" id="xr-frames"></div>
+      </section>
+      <p class="notice">The data below is generated via <code>npm run demo:webgpu:examples</code>. Re-run the command to refresh the gallery snapshots.</p>
+    </main>
+    <footer>
+      WebGPU XR Quaternion SDK – synthetic production capture
+    </footer>
+    <script>
+      const formatter = new Intl.NumberFormat(undefined, {
+        maximumFractionDigits: 2,
+      });
+
+      async function loadJson(path) {
+        const response = await fetch(path);
+        if (!response.ok) {
+          throw new Error(`Failed to load ${path}: ${response.status}`);
+        }
+        return response.json();
+      }
+
+      function createMetadataCard(title, entries) {
+        const card = document.createElement('div');
+        card.className = 'card';
+
+        const heading = document.createElement('h3');
+        heading.textContent = title;
+        card.appendChild(heading);
+
+        const dl = document.createElement('dl');
+        for (const [label, value] of entries) {
+          const dt = document.createElement('dt');
+          dt.textContent = label;
+          const dd = document.createElement('dd');
+          dd.textContent = value;
+          dl.appendChild(dt);
+          dl.appendChild(dd);
+        }
+        card.appendChild(dl);
+        return card;
+      }
+
+      function formatVector(vector) {
+        return vector.map((v) => formatter.format(v)).join(', ');
+      }
+
+      function renderPipeline(pipeline) {
+        const metadata = document.getElementById('pipeline-metadata');
+        metadata.innerHTML = '';
+        metadata.appendChild(
+          createMetadataCard('Layer Targets', [
+            ['Texture Count', pipeline.layerTextures.length],
+            ['Formats', [...new Set(pipeline.layerTextures.map((t) => t.format))].join(', ')],
+          ])
+        );
+        metadata.appendChild(
+          createMetadataCard('Render Bundles', [
+            ['Cached Bundles', pipeline.renderBundles.length],
+            ['Blur Passes', pipeline.blurPasses],
+          ])
+        );
+
+        const frames = document.getElementById('pipeline-frames');
+        frames.innerHTML = '';
+        pipeline.frames.slice(0, 3).forEach((frame) => {
+          const container = document.createElement('article');
+          container.className = 'frame';
+
+          const frameHeader = document.createElement('header');
+          const title = document.createElement('h3');
+          title.textContent = frame.label;
+          const ts = document.createElement('span');
+          ts.textContent = `timestamp: ${frame.timestampMs}ms`;
+          frameHeader.appendChild(title);
+          frameHeader.appendChild(ts);
+          container.appendChild(frameHeader);
+
+          const metrics = document.createElement('div');
+          metrics.className = 'metrics';
+          metrics.innerHTML = `
+            <div class="metric">
+              <span>Motion Energy</span>
+              <strong>${formatter.format(frame.motionEnergy)}</strong>
+            </div>
+            <div class="metric">
+              <span>Translation Mag</span>
+              <strong>${formatter.format(frame.translation.magnitude)}</strong>
+            </div>
+            <div class="metric">
+              <span>Angular Velocity</span>
+              <strong>${formatter.format(frame.angular.velocity.magnitude)}</strong>
+            </div>
+          `;
+          container.appendChild(metrics);
+
+          const uniforms = document.createElement('div');
+          uniforms.className = 'uniforms';
+          uniforms.innerHTML = `
+            <div>
+              <strong>Smoothed Pose (first 8)</strong>
+              <code>${formatVector(frame.poseUniforms[0].slice(0, 8))}</code>
+            </div>
+            <div>
+              <strong>Angular Snapshot (first 8)</strong>
+              <code>${formatVector(frame.poseUniforms[1].slice(0, 8))}</code>
+            </div>
+          `;
+          container.appendChild(uniforms);
+
+          frames.appendChild(container);
+        });
+      }
+
+      function renderXR(xr) {
+        const metadata = document.getElementById('xr-metadata');
+        metadata.innerHTML = '';
+        metadata.appendChild(
+          createMetadataCard('View Configuration', [
+            ['View Count', xr.views.length],
+            ['Reference Space', xr.referenceSpaceType],
+            ['Auto Resize', xr.autoResize ? 'Enabled' : 'Disabled'],
+          ])
+        );
+        metadata.appendChild(
+          createMetadataCard('Frame Stats', [
+            ['Frame Count', xr.frames.length],
+            ['Last Timestamp', `${formatter.format(xr.frames.at(-1)?.timestampMs ?? 0)}ms`],
+            ['Bundle Replays', xr.renderBundles],
+          ])
+        );
+
+        const frames = document.getElementById('xr-frames');
+        frames.innerHTML = '';
+        xr.frames.slice(0, 2).forEach((frame) => {
+          const container = document.createElement('article');
+          container.className = 'frame';
+
+          const frameHeader = document.createElement('header');
+          const title = document.createElement('h3');
+          title.textContent = frame.label;
+          const ts = document.createElement('span');
+          ts.textContent = `timestamp: ${frame.timestampMs}ms`;
+          frameHeader.appendChild(title);
+          frameHeader.appendChild(ts);
+          container.appendChild(frameHeader);
+
+          const metrics = document.createElement('div');
+          metrics.className = 'metrics';
+          metrics.innerHTML = `
+            <div class="metric">
+              <span>Left Eye FOV</span>
+              <strong>${formatter.format(frame.views[0].fov.x)}°</strong>
+            </div>
+            <div class="metric">
+              <span>Right Eye FOV</span>
+              <strong>${formatter.format(frame.views[1].fov.x)}°</strong>
+            </div>
+            <div class="metric">
+              <span>Audio Peak</span>
+              <strong>${formatter.format(frame.audio.maxSample)}</strong>
+            </div>
+          `;
+          container.appendChild(metrics);
+
+          const uniforms = document.createElement('div');
+          uniforms.className = 'uniforms';
+          uniforms.innerHTML = `
+            <div>
+              <strong>Pose Uniform Head (first 8)</strong>
+              <code>${formatVector(frame.poseUniforms[0].slice(0, 8))}</code>
+            </div>
+            <div>
+              <strong>Pose Uniform Tail (last 8)</strong>
+              <code>${formatVector(frame.poseUniforms.at(-1).slice(-8))}</code>
+            </div>
+          `;
+          container.appendChild(uniforms);
+
+          frames.appendChild(container);
+        });
+      }
+
+      async function bootstrap() {
+        try {
+          const [pipeline, xr] = await Promise.all([
+            loadJson('webgpu-pipeline-production.json'),
+            loadJson('webgpu-xr-loop-production.json'),
+          ]);
+          renderPipeline(pipeline);
+          renderXR(xr);
+        } catch (error) {
+          console.error(error);
+          const notice = document.querySelector('.notice');
+          notice.textContent = error.message;
+          notice.style.color = '#ff9b9b';
+        }
+      }
+
+      bootstrap();
+    </script>
+  </body>
+</html>
