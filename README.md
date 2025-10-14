@@ -15,6 +15,10 @@ A focused SDK extracting VIB34D's quaternion mathematics and XR sensor integrati
 - **Sensor Schema Registry**: Normalizes quaternion data from XR devices
 - **AR Visor Adapter**: Processes spatial tracking and pose data
 - **Shader Quaternion Synchronizer**: GPU-ready quaternion-to-matrix conversion
+- **WebGPU Quaternion Compute Stage**: CPU/compute hybrid quaternion-to-matrix batching for WebGPU integrations
+- **WebGPU Glassmorphic Pipeline**: Multi-pass renderer with triple-buffered uniforms, separable blur hooks, render-bundle caching, and auto-resizing layer textures driven by XR viewports
+- **WebGPU Render Bundle Cache**: Declarative encoder reuse for Quest/Vision Pro WebGPU command submission
+- **WebGPU XR Frame Loop**: Schedules XR frames, streams audio/motion energy, and synchronizes pipeline size & color formats with XR views
 - **Sensory Input Bridge**: Centralizes XR sensor routing
 
 ### Visualization Engines
@@ -112,7 +116,116 @@ SensoryInputBridge.distributeQuaternionChannels(data);
 
 // 4. Shader Synchronizer - GPU updates
 ShaderQuaternionSynchronizer.updateUniforms(quaternion);
+
+// 5. Quaternion Compute Stage - Optional compute-backed matrix conversion
+quaternionCompute.matrixForQuaternion(orientation);
+
+// 6. WebGPU Pipeline - Triple-buffered uniform uploads and multi-pass rendering
+glassmorphicPipeline.updatePose({ position, orientation });
+glassmorphicPipeline.render(commandEncoder, finalTargetView);
 ```
+
+Configure layer, blur, and composite passes declaratively:
+
+```javascript
+// Attach fullscreen pipelines and cached render bundles
+glassmorphicPipeline.setLayerPipeline(0, layerPipeline, ({ layerTexture }) =>
+  device.createBindGroup({
+    layout: layerPipeline.getBindGroupLayout(0),
+    entries: [{ binding: 0, resource: layerTexture.createView() }],
+  })
+);
+
+glassmorphicPipeline.setBlurPipelines(0, {
+  horizontal: blurHorizontalPipeline,
+  vertical: blurVerticalPipeline,
+  bindGroupFactory: ({ direction, sourceTexture }) => device.createBindGroup({
+    layout: direction === 'horizontal'
+      ? blurHorizontalPipeline.getBindGroupLayout(0)
+      : blurVerticalPipeline.getBindGroupLayout(0),
+    entries: [{ binding: 0, resource: sourceTexture.createView() }],
+  }),
+});
+
+glassmorphicPipeline.setCompositePipeline(compositePipeline, () =>
+  device.createBindGroup({
+    layout: compositePipeline.getBindGroupLayout(0),
+    entries: glassmorphicPipeline.getLayerTextureViews().map((view, index) => ({
+      binding: index,
+      resource: view,
+    })),
+  })
+);
+```
+
+The `WebGPUXRFrameLoop` automatically updates the glassmorphic pipeline with XR viewport dimensions and preferred swapchain formats, keeping layer textures sized correctly for each view:
+
+```javascript
+const binding = new XRGPUBinding(session, device);
+const projectionLayer = binding.createProjectionLayer({
+  colorFormat: binding.getPreferredColorFormat(),
+});
+
+const loop = new WebGPUXRFrameLoop({
+  device,
+  session,
+  pipeline: glassmorphicPipeline,
+  referenceSpace,
+  // Custom view provider can still override auto-resize or color format behaviour
+  viewProvider: (frame, view) => {
+    const subImage = binding.getViewSubImage(projectionLayer, view);
+    const { colorTexture, viewport } = subImage;
+    return {
+      colorView: colorTexture.createView(),
+      finalColorFormat: binding.getPreferredColorFormat(),
+      size: { width: viewport.width, height: viewport.height },
+    };
+  },
+});
+```
+
+### Pose uniform layout and smoothing controls
+
+`WebGPUGlassmorphicPipeline` now emits a 64-float pose uniform block that captures both raw tracking data and smoothed derivatives for shader consumption. Constructor options `positionSmoothingFactor`, `velocitySmoothingFactor`, and `accelerationSmoothingFactor` control the exponential smoothing applied to translation, velocity, and acceleration respectively (values are clamped to the `[0, 1]` range where `0` = stick to the previous frame and `1` = follow the latest sample). Angular dynamics expose parallel controls via `angularVelocitySmoothingFactor` and `angularAccelerationSmoothingFactor`, while higher-order motion can be tuned through `jerkSmoothingFactor` and `angularJerkSmoothingFactor`.
+
+The packed layout is:
+
+| Indices | Contents |
+| --- | --- |
+| 0-2 | Raw translation (meters) |
+| 3 | Quaternion smoothing factor |
+| 4-7 | Raw quaternion (x, y, z, w) |
+| 8-11 | Smoothed quaternion (x, y, z, w) |
+| 12-14 | Derived rot4d angles (XW, YW, ZW) |
+| 15 | Motion energy scalar |
+| 16 | Timestamp in seconds |
+| 17 | Delta time in seconds |
+| 18 | Instantaneous translation speed magnitude |
+| 19 | Instantaneous translation acceleration magnitude |
+| 20-22 | Smoothed translation |
+| 23 | Position smoothing factor |
+| 24-26 | Smoothed velocity |
+| 27 | Velocity smoothing factor |
+| 28-30 | Smoothed acceleration |
+| 31 | Acceleration smoothing factor |
+| 32-34 | Instantaneous angular velocity vector (rad/s) |
+| 35 | Angular speed magnitude |
+| 36-38 | Instantaneous angular acceleration vector (rad/s²) |
+| 39 | Angular acceleration magnitude |
+| 40-42 | Smoothed angular velocity |
+| 43 | Angular velocity smoothing factor |
+| 44-46 | Smoothed angular acceleration |
+| 47 | Angular acceleration smoothing factor |
+| 48-50 | Instantaneous translation jerk vector (m/s³) |
+| 51 | Translation jerk magnitude |
+| 52-54 | Smoothed translation jerk |
+| 55 | Translation jerk smoothing factor |
+| 56-58 | Instantaneous angular jerk vector (rad/s³) |
+| 59 | Angular jerk magnitude |
+| 60-62 | Smoothed angular jerk |
+| 63 | Angular jerk smoothing factor |
+
+Shaders can sample the smoothed vectors directly for responsive-yet-stable motion, while still having access to the raw pose and derivative magnitudes for more reactive effects (e.g., bloom bursts on rapid head snaps).
 
 ### 4D Rotation Control
 
@@ -154,6 +267,28 @@ This SDK is designed for integration into XR applications that need:
 - GPU-optimized quaternion-to-matrix conversion
 
 See `DOCS/ADAPTIVE_SDK_DEVELOPER_HANDOFF_GUIDE.md` for complete integration instructions.
+
+### WebGPU pipeline demo
+
+Run the bundled demonstration to observe the glassmorphic WebGPU pipeline updating uniforms, caching render bundles, and issuing render passes against a mocked GPU device:
+
+```bash
+npm run demo:webgpu
+```
+
+The script prints pose/audio uniform uploads, blur/composite bind-group wiring, and a per-frame summary of the recorded render passes so you can validate the multi-pass orchestration without real WebGPU hardware.
+
+The glassmorphic renderer, compute helper, and XR frame loop all accept rigid dual quaternions, so translation-aware poses flow straight from the quaternion core into WebGPU uniforms without extra conversions. The shared helpers expose utilities to compose, normalize, and flatten dual quaternions into matrices—mirroring the behaviour exercised in the demo output.
+
+### WebGPU XR frame-loop demo
+
+To see the glassmorphic pipeline driven by the hybrid WebXR/WebGPU control loop, launch the XR session simulator. It bootstraps an `XRGPUBinding`, streams pose + audio data into the `WebGPUXRFrameLoop`, and records the resulting render pass flow for both stereo eyes:
+
+```bash
+npm run demo:webgpu:xr
+```
+
+The console output highlights quaternion smoothing, triple-buffered uniform uploads, and per-eye render submissions so you can validate the frame-loop behaviour before deploying to Quest, Vision Pro, or desktop WebXR runtimes.
 
 ## 🌟 Key Technologies
 
