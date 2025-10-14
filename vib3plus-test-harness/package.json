@@ -1,0 +1,21 @@
+{
+  "name": "vib3plus-test-harness",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "keywords": ["vib3plus", "webxr", "webgpu", "quaternion", "4d", "test-harness"],
+  "author": "Paul Phillips <Paul@clearseassolutions.com>",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "vite": "^7.1.9"
+  },
+  "dependencies": {
+    "vib34d-xr-quaternion-sdk": "file:../vib34d-xr-quaternion-sdk-1.0.0.tgz"
+  }
+}
