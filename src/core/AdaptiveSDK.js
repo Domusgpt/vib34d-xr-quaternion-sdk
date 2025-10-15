@@ -3,6 +3,7 @@ import { createConsentPanel as baseCreateConsentPanel } from '../ui/components/C
 import { LicenseManager } from '../product/licensing/LicenseManager.js';
 import { RemoteLicenseAttestor } from '../product/licensing/RemoteLicenseAttestor.js';
 import { ShaderQuaternionSynchronizer } from '../ui/adaptive/renderers/ShaderQuaternionSynchronizer.js';
+import { createTelemetryFacade } from '../product/telemetry/createTelemetryFacade.js';
 
 export function createAdaptiveSDK(config = {}) {
     const telemetryOptions = { ...(config.telemetry || {}) };
@@ -188,11 +189,29 @@ export function createAdaptiveSDK(config = {}) {
 
     const defaultConsentOptions = Array.isArray(config.consentOptions) ? config.consentOptions : undefined;
 
+    const telemetryFacade = engine.telemetryFacade || createTelemetryFacade({
+        harness: engine.telemetry,
+        owner: engine,
+        hooks: {
+            onProviderRegistered: provider => {
+                if (provider?.id) {
+                    engine.telemetry.track('design.telemetry.provider_registered', { id: provider.id });
+                }
+            },
+            onProviderRemoved: id => {
+                if (id) {
+                    engine.telemetry.track('design.telemetry.provider_removed', { id });
+                }
+            }
+        }
+    });
+
     return {
         engine,
         sensoryBridge: engine.sensoryBridge,
         layoutSynthesizer: engine.layoutSynthesizer,
         telemetry: engine.telemetry,
+        telemetryControls: telemetryFacade,
         projectionComposer: engine.projectionComposer,
         projectionSimulator: engine.projectionSimulator,
         licenseManager,
@@ -226,14 +245,14 @@ export function createAdaptiveSDK(config = {}) {
         },
         registerLayoutStrategy: engine.registerLayoutStrategy.bind(engine),
         registerLayoutAnnotation: engine.registerLayoutAnnotation.bind(engine),
-        registerTelemetryProvider: engine.registerTelemetryProvider.bind(engine),
-        registerTelemetryRequestMiddleware: engine.registerTelemetryRequestMiddleware.bind(engine),
-        clearTelemetryRequestMiddleware: engine.clearTelemetryRequestMiddleware.bind(engine),
-        registerLicenseAttestationProfile: engine.registerLicenseAttestationProfile.bind(engine),
-        registerLicenseAttestationProfilePack: engine.registerLicenseAttestationProfilePack.bind(engine),
-        getLicenseAttestationProfiles: engine.telemetry.getLicenseAttestationProfiles.bind(engine.telemetry),
-        getLicenseAttestationProfile: engine.telemetry.getLicenseAttestationProfile.bind(engine.telemetry),
-        setDefaultLicenseAttestationProfile: engine.setDefaultLicenseAttestationProfile.bind(engine),
+        registerTelemetryProvider: telemetryFacade.registerProvider,
+        registerTelemetryRequestMiddleware: telemetryFacade.registerRequestMiddleware,
+        clearTelemetryRequestMiddleware: telemetryFacade.clearRequestMiddleware,
+        registerLicenseAttestationProfile: telemetryFacade.registerLicenseAttestationProfile,
+        registerLicenseAttestationProfilePack: telemetryFacade.registerLicenseAttestationProfilePack,
+        getLicenseAttestationProfiles: telemetryFacade.getLicenseAttestationProfiles,
+        getLicenseAttestationProfile: telemetryFacade.getLicenseAttestationProfile,
+        setDefaultLicenseAttestationProfile: telemetryFacade.setDefaultLicenseAttestationProfile,
         setLicenseAttestorFromProfile(profileId, overrides = {}) {
             const result = engine.applyLicenseAttestationProfile(profileId, overrides);
             if (result?.attestor) {
@@ -250,16 +269,16 @@ export function createAdaptiveSDK(config = {}) {
         testSensorAdapter: engine.testSensorAdapter.bind(engine),
         updateTelemetryConsent: engine.telemetry.updateConsent.bind(engine.telemetry),
         getTelemetryConsent: engine.telemetry.getConsentSnapshot.bind(engine.telemetry),
-        getTelemetryAuditTrail: engine.getTelemetryAuditTrail.bind(engine),
-        getLicenseCommercializationSummary: engine.getLicenseCommercializationSummary.bind(engine),
-        getLicenseCommercializationReporter: engine.getLicenseCommercializationReporter.bind(engine),
-        getLicenseCommercializationSnapshotStore: engine.getLicenseCommercializationSnapshotStore.bind(engine),
-        captureLicenseCommercializationSnapshot: engine.captureLicenseCommercializationSnapshot.bind(engine),
-        getLicenseCommercializationSnapshots: engine.getLicenseCommercializationSnapshots.bind(engine),
-        getLicenseCommercializationKpiReport: engine.getLicenseCommercializationKpiReport.bind(engine),
-        exportLicenseCommercializationSnapshots: engine.exportLicenseCommercializationSnapshots.bind(engine),
-        startLicenseCommercializationSnapshotSchedule: engine.startLicenseCommercializationSnapshotSchedule.bind(engine),
-        stopLicenseCommercializationSnapshotSchedule: engine.stopLicenseCommercializationSnapshotSchedule.bind(engine),
+        getTelemetryAuditTrail: telemetryFacade.getAuditTrail,
+        getLicenseCommercializationSummary: telemetryFacade.getCommercializationSummary,
+        getLicenseCommercializationReporter: telemetryFacade.getCommercializationReporter,
+        getLicenseCommercializationSnapshotStore: telemetryFacade.getCommercializationSnapshotStore,
+        captureLicenseCommercializationSnapshot: telemetryFacade.captureCommercializationSnapshot,
+        getLicenseCommercializationSnapshots: telemetryFacade.getCommercializationSnapshots,
+        getLicenseCommercializationKpiReport: telemetryFacade.getCommercializationKpiReport,
+        exportLicenseCommercializationSnapshots: telemetryFacade.exportCommercializationSnapshots,
+        startLicenseCommercializationSnapshotSchedule: telemetryFacade.startCommercializationSnapshotSchedule,
+        stopLicenseCommercializationSnapshotSchedule: telemetryFacade.stopCommercializationSnapshotSchedule,
         setLicense(license) {
             if (!licenseManager) {
                 throw new Error('No license manager configured for this SDK instance.');
