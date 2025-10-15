@@ -3,6 +3,10 @@ import { SensoryInputBridge } from '../ui/adaptive/SensoryInputBridge.js';
 import type { StoryTriggerActivation } from '../ui/adaptive/localization/SpatialStoryGraph.ts';
 import WebGPUPreviewHarness, { type LayerMaterialUpdate } from './webgpuPreviewHarness.ts';
 import WebGLFallbackPreview, { type MaterialOverrides } from './webglFallbackPreview.ts';
+import {
+  PREVIEW_PRESETS,
+  type PreviewPreset,
+} from './previewPresets.ts';
 import type {
   GlassGeometryModule,
   GlassProjectionModule,
@@ -165,6 +169,19 @@ interface LayerMaterialControl {
   tetraThickness: number;
 }
 
+interface LayerMaterialHandles {
+  primary: ControlHandle;
+  secondary: ControlHandle;
+  background: ControlHandle;
+  pattern: ControlHandle;
+  glitch: ControlHandle;
+  colorShift: ControlHandle;
+  grid: ControlHandle;
+  line: ControlHandle;
+  shell: ControlHandle;
+  tetra: ControlHandle;
+}
+
 interface LayerState {
   geometry: GlassGeometryModule;
   projection: GlassProjectionModule;
@@ -238,6 +255,19 @@ const createDefaultLayerMaterialControl = (index: number, total: number): LayerM
     tetraThickness: toRounded(0.03 + colorSeed * 0.01, 5),
   };
 };
+
+const cloneMaterialControl = (material: LayerMaterialControl): LayerMaterialControl => ({
+  primaryColor: material.primaryColor,
+  secondaryColor: material.secondaryColor,
+  backgroundColor: material.backgroundColor,
+  patternIntensity: material.patternIntensity,
+  glitchIntensity: material.glitchIntensity,
+  colorShift: material.colorShift,
+  gridDensity: material.gridDensity,
+  lineThickness: material.lineThickness,
+  shellWidth: material.shellWidth,
+  tetraThickness: material.tetraThickness,
+});
 
 const toMaterialConfig = (control: LayerMaterialControl): LayerMaterialConfig => ({
   primaryColor: hexToColor(control.primaryColor),
@@ -383,6 +413,17 @@ const createColorControl = (
   return { input, valueLabel };
 };
 
+const setSliderHandleValue = (handle: ControlHandle, value: number) => {
+  handle.input.value = String(value);
+  handle.valueLabel.textContent = formatNumber(value);
+};
+
+const setColorHandleValue = (handle: ControlHandle, hex: string) => {
+  const normalized = hex.startsWith('#') ? hex.toUpperCase() : `#${hex.toUpperCase()}`;
+  handle.input.value = normalized;
+  handle.valueLabel.textContent = normalized;
+};
+
 export function createQuaternionPreview(
   container: HTMLElement,
   options: QuaternionPreviewOptions = {}
@@ -402,14 +443,53 @@ export function createQuaternionPreview(
   controls.className = 'qp-controls';
   layout.appendChild(controls);
 
-  const layerStates: LayerState[] = LAYER_BLUEPRINTS.map((blueprint, index) => ({
-    geometry: blueprint.geometry,
-    projection: blueprint.projection,
-    material: createDefaultLayerMaterialControl(index, LAYER_BLUEPRINTS.length),
-  }));
+  const defaultPreset = PREVIEW_PRESETS[0];
+  const CUSTOM_PRESET_ID = 'custom';
+  const customPresetDescription =
+    'Custom configuration — manual overrides not captured by curated presets.';
+
+  const layerStates: LayerState[] = LAYER_BLUEPRINTS.map((blueprint, index) => {
+    const presetLayer = defaultPreset?.layers[index];
+    return {
+      geometry: presetLayer?.geometry ?? blueprint.geometry,
+      projection: presetLayer?.projection ?? blueprint.projection,
+      material: presetLayer
+        ? cloneMaterialControl(presetLayer.material)
+        : createDefaultLayerMaterialControl(index, LAYER_BLUEPRINTS.length),
+    } satisfies LayerState;
+  });
 
   const layerGeometryHandles: Array<SelectHandle<GlassGeometryModule> | null> = [];
   const layerProjectionHandles: Array<SelectHandle<GlassProjectionModule> | null> = [];
+  const layerMaterialHandles: Array<LayerMaterialHandles | null> = [];
+
+  const presetSelectOptions = [
+    ...PREVIEW_PRESETS.map(preset => ({ value: preset.id, label: preset.label })),
+    { value: CUSTOM_PRESET_ID, label: 'Custom blend' },
+  ] as const;
+
+  const presetSelect = createSelect(
+    controls,
+    'Layer preset',
+    presetSelectOptions,
+    defaultPreset?.id ?? CUSTOM_PRESET_ID,
+  );
+
+  const presetDescription = document.createElement('p');
+  presetDescription.className = 'qp-preset-description';
+  presetDescription.textContent = defaultPreset?.description ?? customPresetDescription;
+  controls.appendChild(presetDescription);
+
+  let activePresetId = defaultPreset?.id ?? CUSTOM_PRESET_ID;
+
+  const markPresetAsCustom = () => {
+    if (activePresetId === CUSTOM_PRESET_ID) {
+      return;
+    }
+    activePresetId = CUSTOM_PRESET_ID;
+    presetSelect.select.value = CUSTOM_PRESET_ID;
+    presetDescription.textContent = customPresetDescription;
+  };
 
   let fallbackMaterialOverrides: MaterialOverrides = toFallbackOverrides(layerStates[0]?.material ?? {
     primaryColor: '#FFFFFF',
@@ -509,6 +589,7 @@ export function createQuaternionPreview(
 
     const geometryHandle = createSelect(body, 'Geometry module', geometryOptions, state.geometry);
     geometryHandle.select.addEventListener('change', () => {
+      markPresetAsCustom();
       state.geometry = geometryHandle.getValue();
       layerGeometryHandles[index] = geometryHandle;
       if (index === 0) {
@@ -521,6 +602,7 @@ export function createQuaternionPreview(
 
     const projectionHandle = createSelect(body, 'Projection module', projectionOptions, state.projection);
     projectionHandle.select.addEventListener('change', () => {
+      markPresetAsCustom();
       state.projection = projectionHandle.getValue();
       layerProjectionHandles[index] = projectionHandle;
       if (index === 0) {
@@ -531,17 +613,20 @@ export function createQuaternionPreview(
     });
     layerProjectionHandles[index] = projectionHandle;
 
-    createColorControl(body, 'Primary color', state.material.primaryColor, next => {
+    const primaryHandle = createColorControl(body, 'Primary color', state.material.primaryColor, next => {
+      markPresetAsCustom();
       state.material.primaryColor = next;
       applyLayerMaterial(index);
     });
 
-    createColorControl(body, 'Secondary color', state.material.secondaryColor, next => {
+    const secondaryHandle = createColorControl(body, 'Secondary color', state.material.secondaryColor, next => {
+      markPresetAsCustom();
       state.material.secondaryColor = next;
       applyLayerMaterial(index);
     });
 
-    createColorControl(body, 'Background color', state.material.backgroundColor, next => {
+    const backgroundHandle = createColorControl(body, 'Background color', state.material.backgroundColor, next => {
+      markPresetAsCustom();
       state.material.backgroundColor = next;
       applyLayerMaterial(index);
     });
@@ -553,6 +638,7 @@ export function createQuaternionPreview(
       value: state.material.patternIntensity,
     });
     patternSlider.input.addEventListener('input', () => {
+      markPresetAsCustom();
       state.material.patternIntensity = Number(patternSlider.input.value);
       applyLayerMaterial(index);
     });
@@ -564,6 +650,7 @@ export function createQuaternionPreview(
       value: state.material.glitchIntensity,
     });
     glitchSlider.input.addEventListener('input', () => {
+      markPresetAsCustom();
       state.material.glitchIntensity = Number(glitchSlider.input.value);
       applyLayerMaterial(index);
     });
@@ -575,6 +662,7 @@ export function createQuaternionPreview(
       value: state.material.colorShift,
     });
     colorShiftSlider.input.addEventListener('input', () => {
+      markPresetAsCustom();
       state.material.colorShift = Number(colorShiftSlider.input.value);
       applyLayerMaterial(index);
     });
@@ -586,6 +674,7 @@ export function createQuaternionPreview(
       value: state.material.gridDensity,
     });
     gridSlider.input.addEventListener('input', () => {
+      markPresetAsCustom();
       state.material.gridDensity = Number(gridSlider.input.value);
       applyLayerMaterial(index);
     });
@@ -597,6 +686,7 @@ export function createQuaternionPreview(
       value: state.material.lineThickness,
     });
     lineSlider.input.addEventListener('input', () => {
+      markPresetAsCustom();
       state.material.lineThickness = Number(lineSlider.input.value);
       applyLayerMaterial(index);
     });
@@ -608,6 +698,7 @@ export function createQuaternionPreview(
       value: state.material.shellWidth,
     });
     shellSlider.input.addEventListener('input', () => {
+      markPresetAsCustom();
       state.material.shellWidth = Number(shellSlider.input.value);
       applyLayerMaterial(index);
     });
@@ -619,9 +710,23 @@ export function createQuaternionPreview(
       value: state.material.tetraThickness,
     });
     tetraSlider.input.addEventListener('input', () => {
+      markPresetAsCustom();
       state.material.tetraThickness = Number(tetraSlider.input.value);
       applyLayerMaterial(index);
     });
+
+    layerMaterialHandles[index] = {
+      primary: primaryHandle,
+      secondary: secondaryHandle,
+      background: backgroundHandle,
+      pattern: patternSlider,
+      glitch: glitchSlider,
+      colorShift: colorShiftSlider,
+      grid: gridSlider,
+      line: lineSlider,
+      shell: shellSlider,
+      tetra: tetraSlider,
+    };
 
     layerList.appendChild(card);
   });
@@ -821,6 +926,93 @@ export function createQuaternionPreview(
     startWebGLFallback();
   };
 
+  const applyPreset = (preset: PreviewPreset) => {
+    activePresetId = preset.id;
+    presetSelect.select.value = preset.id;
+    presetDescription.textContent = preset.description;
+
+    let geometryChanged = false;
+
+    LAYER_BLUEPRINTS.forEach((blueprint, index) => {
+      const state = layerStates[index];
+      if (!state) {
+        return;
+      }
+
+      const presetLayer = preset.layers[index];
+      const nextGeometry = presetLayer?.geometry ?? blueprint.geometry;
+      const nextProjection = presetLayer?.projection ?? blueprint.projection;
+      const nextMaterial = presetLayer?.material
+        ? cloneMaterialControl(presetLayer.material)
+        : createDefaultLayerMaterialControl(index, LAYER_BLUEPRINTS.length);
+
+      if (state.geometry !== nextGeometry) {
+        state.geometry = nextGeometry;
+        geometryChanged = true;
+      }
+      if (state.projection !== nextProjection) {
+        state.projection = nextProjection;
+        geometryChanged = true;
+      }
+
+      state.material = nextMaterial;
+
+      const geometryHandle = layerGeometryHandles[index];
+      if (geometryHandle && geometryHandle.select.value !== state.geometry) {
+        geometryHandle.select.value = state.geometry;
+      }
+      const projectionHandle = layerProjectionHandles[index];
+      if (projectionHandle && projectionHandle.select.value !== state.projection) {
+        projectionHandle.select.value = state.projection;
+      }
+
+      const materialHandles = layerMaterialHandles[index];
+      if (materialHandles) {
+        setColorHandleValue(materialHandles.primary, state.material.primaryColor);
+        setColorHandleValue(materialHandles.secondary, state.material.secondaryColor);
+        setColorHandleValue(materialHandles.background, state.material.backgroundColor);
+        setSliderHandleValue(materialHandles.pattern, state.material.patternIntensity);
+        setSliderHandleValue(materialHandles.glitch, state.material.glitchIntensity);
+        setSliderHandleValue(materialHandles.colorShift, state.material.colorShift);
+        setSliderHandleValue(materialHandles.grid, state.material.gridDensity);
+        setSliderHandleValue(materialHandles.line, state.material.lineThickness);
+        setSliderHandleValue(materialHandles.shell, state.material.shellWidth);
+        setSliderHandleValue(materialHandles.tetra, state.material.tetraThickness);
+      }
+    });
+
+    selectedGeometry = layerStates[0]?.geometry ?? selectedGeometry;
+    selectedProjection = layerStates[0]?.projection ?? selectedProjection;
+    geometrySelect.select.value = selectedGeometry;
+    projectionSelect.select.value = selectedProjection;
+
+    applyAllLayerMaterials();
+
+    if (geometryChanged) {
+      void rebuildRenderer(activeRenderer !== 'webgl');
+    } else if (activeRenderer === 'webgpu' && webgpuHarness) {
+      updateRiskList(webgpuHarness.listRisks());
+      updateStoryList(webgpuHarness.listStoryActivations());
+    } else if (activeRenderer === 'webgl' && webglFallback) {
+      updateRiskList(webglFallback.listRisks());
+      updateStoryList(webglFallback.listStoryActivations());
+    }
+  };
+
+  presetSelect.select.addEventListener('change', () => {
+    const presetId = presetSelect.getValue();
+    if (presetId === CUSTOM_PRESET_ID) {
+      activePresetId = CUSTOM_PRESET_ID;
+      presetDescription.textContent = customPresetDescription;
+      return;
+    }
+
+    const preset = PREVIEW_PRESETS.find(candidate => candidate.id === presetId);
+    if (preset) {
+      applyPreset(preset);
+    }
+  });
+
   if (typeof window !== 'undefined') {
     window.addEventListener('resize', () => webgpuHarness?.forceResize());
   }
@@ -975,6 +1167,7 @@ export function createQuaternionPreview(
   roll.input.addEventListener('input', handleInput);
   confidence.input.addEventListener('input', handleInput);
   geometrySelect.select.addEventListener('change', () => {
+    markPresetAsCustom();
     selectedGeometry = geometrySelect.getValue();
     if (layerStates[0]) {
       layerStates[0].geometry = selectedGeometry;
@@ -986,6 +1179,7 @@ export function createQuaternionPreview(
     void rebuildRenderer(activeRenderer !== 'webgl');
   });
   projectionSelect.select.addEventListener('change', () => {
+    markPresetAsCustom();
     selectedProjection = projectionSelect.getValue();
     if (layerStates[0]) {
       layerStates[0].projection = selectedProjection;
