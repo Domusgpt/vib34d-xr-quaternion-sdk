@@ -37,6 +37,24 @@ A focused SDK extracting VIB34D's quaternion mathematics and XR sensor integrati
 - **License Manager**: Attestation profiles for enterprise/studio/indie tiers
 - **Telemetry System**: Privacy-compliant event tracking
 - **Commercialization Analytics**: KPI reporting and snapshot storage
+- **Telemetry Facade**: Chainable `telemetryControls` wrappers for provider registration, consent updates, and commercialization helpers.
+
+```javascript
+import { createAdaptiveSDK } from 'vib34d-xr-quaternion-sdk';
+
+const sdk = createAdaptiveSDK({
+  telemetry: { defaultConsent: { analytics: false } }
+});
+
+// Telemetry facade mirrors harness helpers but returns the engine for easy chaining.
+sdk.telemetryControls
+  .registerTelemetryProvider(myProvider)
+  .registerTelemetryRequestMiddleware(createSigningMiddleware());
+
+// Snapshot utilities and audit helpers are accessible through the same facade.
+const summary = sdk.telemetryControls.getCommercializationSummary();
+const auditTrail = sdk.telemetryControls.getAuditTrail();
+```
 
 ## 📂 Repository Structure
 

@@ -33,7 +33,8 @@
     "./ui/adaptive/localization": {
       "types": "./src/ui/adaptive/localization/index.ts",
       "default": "./src/ui/adaptive/localization/index.ts"
-    }
+    },
+    "./product/telemetry/facade": "./src/product/telemetry/createTelemetryFacade.js"
   },
   "keywords": [
     "quaternion",
