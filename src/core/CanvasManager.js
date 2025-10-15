@@ -11,7 +11,15 @@ export class CanvasManager {
 
   async switchToSystem(systemName, engineClasses) {
     console.log(`🔄 DESTROY OLD → CREATE NEW: ${systemName}`);
-    
+
+    const previousSystem = this.currentSystem;
+    if (previousSystem) {
+      this.dispatchSystemEvent('vib34d:system-deactivated', {
+        systemName: previousSystem,
+        systems: [previousSystem]
+      });
+    }
+
     // STEP 1: DESTROY current engine completely
     if (this.currentEngine) {
       if (this.currentEngine.setActive) {
@@ -22,10 +30,13 @@ export class CanvasManager {
       }
       console.log('💥 Old engine destroyed');
     }
-    
-    // STEP 2: DESTROY old WebGL contexts 
+
+    this.currentEngine = null;
+    this.currentSystem = null;
+
+    // STEP 2: DESTROY old WebGL contexts
     this.destroyOldWebGLContexts();
-    
+
     // STEP 3: DESTROY all canvases + CREATE 5 fresh ones
     this.destroyAllCanvasesAndCreateFresh(systemName);
     
@@ -36,11 +47,39 @@ export class CanvasManager {
     if (engine && engine.setActive) {
       engine.setActive(true);
     }
-    
+
     this.currentSystem = systemName;
     this.currentEngine = engine;
     console.log(`✅ DESTROY → CREATE complete: ${systemName} ready`);
+
+    this.dispatchSystemEvent('vib34d:system-activated', {
+      systemName,
+      systems: [systemName],
+      engineReady: !!engine
+    });
+
     return engine;
+  }
+
+  dispatchSystemEvent(eventName, detail = {}) {
+    if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') {
+      return;
+    }
+
+    try {
+      let event;
+      if (typeof window.CustomEvent === 'function') {
+        event = new window.CustomEvent(eventName, { detail });
+      } else if (typeof document !== 'undefined' && typeof document.createEvent === 'function') {
+        event = document.createEvent('CustomEvent');
+        event.initCustomEvent(eventName, false, false, detail);
+      } else {
+        return;
+      }
+      window.dispatchEvent(event);
+    } catch (error) {
+      console.warn('⚠️ Failed to dispatch system event', eventName, error);
+    }
   }
 
   destroyOldWebGLContexts() {
