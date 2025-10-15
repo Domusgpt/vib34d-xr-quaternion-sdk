@@ -6,11 +6,13 @@ import {
   composeRotorFromDualQuaternion,
   createQuaternion,
   dualQuaternionFromRotationTranslation,
+  dualQuaternionFromMatrix4,
   dualQuaternionToMatrix4,
   extractTranslation,
   fromAxisAngle,
   matrix3ToQuaternion,
   matrix4ToQuaternion,
+  matrix4ToTranslation,
   multiply,
   normalize,
   quaternionToMatrix3,
@@ -72,6 +74,20 @@ describe('Dual quaternion utilities', () => {
     const dq = dualQuaternionFromRotationTranslation(IDENTITY_QUATERNION, [5, -2, 9]);
     const matrix = dualQuaternionToMatrix4(dq);
     expectVec3Close([matrix[12], matrix[13], matrix[14]], [5, -2, 9]);
+  });
+
+  it('constructs dual quaternions from 4x4 matrices', () => {
+    const rotation = fromAxisAngle([0, 0, 1], Math.PI / 4);
+    const translation: [number, number, number] = [2, -1, 0.5];
+    const matrix = quaternionToMatrix4(rotation);
+    matrix[12] = translation[0];
+    matrix[13] = translation[1];
+    matrix[14] = translation[2];
+
+    const dq = dualQuaternionFromMatrix4(matrix);
+    expectQuaternionClose(dq.real, rotation);
+    expectVec3Close(extractTranslation(dq), translation);
+    expectVec3Close(matrix4ToTranslation(matrix), translation);
   });
 
   it('blends multiple dual quaternions with weights', () => {
