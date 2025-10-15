@@ -8,6 +8,13 @@
  * visual systems react coherently to wearable localization data.
  */
 
+import {
+    IDENTITY_QUATERNION,
+    conjugate as conjugateQuaternion,
+    multiply as multiplyQuaternion,
+    normalize as normalizeQuaternionTuple
+} from '../../../core/quaternion/index.ts';
+
 const ROTATION_LIMIT = 6.28; // ±2π rad slider range
 const DEG_PER_RAD = 180 / Math.PI;
 
@@ -23,8 +30,23 @@ const PARAM_LIMITS = {
 };
 
 const CHANNELS = ['spatial.anchors', 'spatial.hit-tests', 'spatial.pose'];
+const DEFAULT_SYSTEMS = ['quantum', 'holographic', 'faceted'];
 
-const identityQuaternion = () => ({ x: 0, y: 0, z: 0, w: 1 });
+const identityQuaternionTuple = () => IDENTITY_QUATERNION;
+
+const toQuaternionTuple = quaternion => {
+    if (!quaternion || typeof quaternion !== 'object') {
+        return identityQuaternionTuple();
+    }
+
+    const x = Number(quaternion.x) || 0;
+    const y = Number(quaternion.y) || 0;
+    const z = Number(quaternion.z) || 0;
+    const w = Number(quaternion.w);
+    const inferredW = Number.isFinite(w) ? w : Math.sqrt(Math.max(0, 1 - (x * x + y * y + z * z)));
+
+    return [x, y, z, inferredW];
+};
 
 export class ShaderQuaternionSynchronizer {
     constructor(options = {}) {
@@ -37,7 +59,13 @@ export class ShaderQuaternionSynchronizer {
             baseAlpha = 0.25,
             energySmoothing = 0.35,
             velocityReference = 8,
-            logger = console
+            logger = console,
+            targetSystems,
+            autoExclusiveActivation = true,
+            maxActiveSystems = 1,
+            activationEventTarget = typeof window !== 'undefined' ? window : null,
+            activationEvent = 'vib34d:system-activated',
+            deactivationEvent = 'vib34d:system-deactivated'
         } = options;
 
         if (!bridge || typeof bridge.subscribe !== 'function') {
@@ -51,6 +79,52 @@ export class ShaderQuaternionSynchronizer {
         this.energySmoothing = Math.max(0, Math.min(1, energySmoothing));
         this.velocityReference = Math.max(0.001, velocityReference);
         this.logger = logger;
+
+        this.targetSystems = new Set();
+        this.maxActiveSystems = this.normalizeTargetLimit(maxActiveSystems);
+        const inferredTargets = Array.isArray(targetSystems) && targetSystems.length > 0
+            ? targetSystems
+            : systems && typeof systems === 'object'
+                ? Object.keys(systems)
+                : DEFAULT_SYSTEMS;
+        this.setTargetSystems(inferredTargets);
+
+        this.activationEventTarget = activationEventTarget;
+        this.activationEvent = activationEvent;
+        this.deactivationEvent = deactivationEvent;
+        this.autoExclusiveActivation = !!autoExclusiveActivation;
+        this.activationListener = null;
+        this.deactivationListener = null;
+
+        if (this.autoExclusiveActivation && this.activationEventTarget?.addEventListener) {
+            this.activationListener = event => {
+                const detail = event?.detail || {};
+                const detailTargets = Array.isArray(detail?.systems) ? detail.systems : null;
+                if (detailTargets && detailTargets.length > 0) {
+                    this.setTargetSystems(detailTargets);
+                    return;
+                }
+                const systemName = typeof detail?.systemName === 'string' ? detail.systemName.trim() : '';
+                if (systemName) {
+                    this.activateExclusiveSystem(systemName);
+                }
+            };
+
+            this.deactivationListener = event => {
+                const detail = event?.detail || {};
+                const systemName = typeof detail?.systemName === 'string' ? detail.systemName.trim() : '';
+                if (!systemName) {
+                    return;
+                }
+                if (this.targetSystems.has(systemName)) {
+                    const remaining = [...this.targetSystems].filter(name => name !== systemName);
+                    this.setTargetSystems(remaining);
+                }
+            };
+
+            this.activationEventTarget.addEventListener(this.activationEvent, this.activationListener);
+            this.activationEventTarget.addEventListener(this.deactivationEvent, this.deactivationListener);
+        }
 
         this.resolveSystem = typeof systemResolver === 'function'
             ? systemResolver
@@ -186,10 +260,13 @@ export class ShaderQuaternionSynchronizer {
         };
 
         const motionEnergy = this.computeMotionEnergy(normalized, timestamp);
+        if (this.targetSystems.size === 0) {
+            return;
+        }
 
-        this.applyToSystem('quantum', rotationTarget, motionEnergy, confidence, euler);
-        this.applyToSystem('holographic', rotationTarget, motionEnergy, confidence, euler);
-        this.applyToSystem('faceted', rotationTarget, motionEnergy, confidence, euler);
+        for (const systemName of this.targetSystems) {
+            this.applyToSystem(systemName, rotationTarget, motionEnergy, confidence, euler);
+        }
     }
 
     applyToSystem(systemName, rotationTarget, motionEnergy, confidence, euler) {
@@ -270,40 +347,126 @@ export class ShaderQuaternionSynchronizer {
         return map.get(param);
     }
 
+    setTargetSystems(systemNames) {
+        const names = Array.isArray(systemNames) ? systemNames : [];
+        const seen = new Set();
+        const sanitized = [];
+
+        for (const rawName of names) {
+            if (typeof rawName !== 'string') {
+                continue;
+            }
+
+            const trimmed = rawName.trim();
+            if (!trimmed || seen.has(trimmed)) {
+                continue;
+            }
+
+            seen.add(trimmed);
+            sanitized.push(trimmed);
+        }
+
+        const limited = this.enforceTargetLimit(sanitized);
+
+        if (limited.length < sanitized.length) {
+            this.logger?.warn?.('[ShaderQuaternionSynchronizer] target system limit reached', {
+                requested: sanitized,
+                applied: limited,
+                limit: this.maxActiveSystems
+            });
+        }
+
+        this.targetSystems = new Set(limited);
+        return this;
+    }
+
+    enforceTargetLimit(systemNames) {
+        if (!Array.isArray(systemNames) || systemNames.length === 0) {
+            return [];
+        }
+
+        if (this.maxActiveSystems === Infinity) {
+            return [...systemNames];
+        }
+
+        const limit = Number(this.maxActiveSystems);
+        if (!Number.isFinite(limit) || limit <= 0) {
+            return [...systemNames];
+        }
+
+        return systemNames.slice(0, limit);
+    }
+
+    normalizeTargetLimit(limit) {
+        if (limit === undefined || limit === null) {
+            return 1;
+        }
+
+        if (limit === Infinity) {
+            return Infinity;
+        }
+
+        const numeric = Number(limit);
+        if (!Number.isFinite(numeric)) {
+            return 1;
+        }
+
+        if (numeric <= 0) {
+            return 1;
+        }
+
+        return Math.floor(numeric);
+    }
+
+    activateExclusiveSystem(systemName) {
+        if (typeof systemName !== 'string' || !systemName.trim()) {
+            this.targetSystems.clear();
+            return this;
+        }
+        this.setTargetSystems([systemName.trim()]);
+        return this;
+    }
+
+    getTargetSystems() {
+        return [...this.targetSystems];
+    }
+
+    destroy() {
+        this.stop();
+        if (this.activationListener && this.activationEventTarget?.removeEventListener) {
+            this.activationEventTarget.removeEventListener(this.activationEvent, this.activationListener);
+        }
+        if (this.deactivationListener && this.activationEventTarget?.removeEventListener) {
+            this.activationEventTarget.removeEventListener(this.deactivationEvent, this.deactivationListener);
+        }
+        this.activationListener = null;
+        this.deactivationListener = null;
+    }
+
     normalizeQuaternion(quaternion) {
-        if (!quaternion || typeof quaternion !== 'object') {
-            return identityQuaternion();
+        const tuple = toQuaternionTuple(quaternion);
+        const normalized = normalizeQuaternionTuple(tuple);
+        if (!normalized) {
+            return identityQuaternionTuple();
         }
-        const x = Number(quaternion.x) || 0;
-        const y = Number(quaternion.y) || 0;
-        const z = Number(quaternion.z) || 0;
-        const w = Number(quaternion.w);
-        const wValue = Number.isFinite(w) ? w : Math.sqrt(Math.max(0, 1 - (x * x + y * y + z * z)));
-        const length = Math.hypot(x, y, z, wValue);
-        if (length === 0) {
-            return identityQuaternion();
-        }
-        return {
-            x: x / length,
-            y: y / length,
-            z: z / length,
-            w: wValue / length
-        };
+        return normalized;
     }
 
     quaternionToEuler(q) {
+        const [x, y, z, w] = q;
+
         // Roll (x-axis rotation)
-        const sinr = 2 * (q.w * q.x + q.y * q.z);
-        const cosr = 1 - 2 * (q.x * q.x + q.y * q.y);
+        const sinr = 2 * (w * x + y * z);
+        const cosr = 1 - 2 * (x * x + y * y);
         const roll = Math.atan2(sinr, cosr);
 
         // Pitch (y-axis rotation)
-        const sinp = 2 * (q.w * q.y - q.z * q.x);
+        const sinp = 2 * (w * y - z * x);
         const pitch = Math.abs(sinp) >= 1 ? Math.sign(sinp) * (Math.PI / 2) : Math.asin(sinp);
 
         // Yaw (z-axis rotation)
-        const siny = 2 * (q.w * q.z + q.x * q.y);
-        const cosy = 1 - 2 * (q.y * q.y + q.z * q.z);
+        const siny = 2 * (w * z + x * y);
+        const cosy = 1 - 2 * (y * y + z * z);
         const yaw = Math.atan2(siny, cosy);
 
         return { roll, pitch, yaw };
@@ -337,10 +500,10 @@ export class ShaderQuaternionSynchronizer {
             return 0;
         }
 
-        const deltaQuat = this.multiply(quaternion, this.conjugate(this.lastQuaternion));
+        const deltaQuat = multiplyQuaternion(quaternion, conjugateQuaternion(this.lastQuaternion));
         const angle = 2 * Math.atan2(
-            Math.hypot(deltaQuat.x, deltaQuat.y, deltaQuat.z),
-            deltaQuat.w
+            Math.hypot(deltaQuat[0], deltaQuat[1], deltaQuat[2]),
+            deltaQuat[3]
         );
 
         const lastTime = typeof this.lastTimestamp === 'number' ? this.lastTimestamp : timestamp;
@@ -352,19 +515,6 @@ export class ShaderQuaternionSynchronizer {
         this.lastQuaternion = quaternion;
         this.lastTimestamp = timestamp;
         return this.motionEnergy;
-    }
-
-    multiply(a, b) {
-        return {
-            w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
-            x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
-            y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
-            z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w
-        };
-    }
-
-    conjugate(q) {
-        return { x: -q.x, y: -q.y, z: -q.z, w: q.w };
     }
 
     lerp(start, end, alpha) {
