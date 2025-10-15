@@ -7,11 +7,32 @@ export class CanvasManager {
   constructor() {
     this.currentSystem = null;
     this.currentEngine = null;
+    this.boundResizeHandler = null;
+    this.resizeEventOptions = { passive: true };
+
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      this.boundResizeHandler = this.handleResize.bind(this);
+      window.addEventListener('resize', this.boundResizeHandler, this.resizeEventOptions);
+
+      try {
+        window.addEventListener('orientationchange', this.boundResizeHandler, this.resizeEventOptions);
+      } catch (error) {
+        console.warn('⚠️ Failed to attach orientationchange listener', error);
+      }
+    }
   }
 
   async switchToSystem(systemName, engineClasses) {
     console.log(`🔄 DESTROY OLD → CREATE NEW: ${systemName}`);
-    
+
+    const previousSystem = this.currentSystem;
+    if (previousSystem) {
+      this.dispatchSystemEvent('vib34d:system-deactivated', {
+        systemName: previousSystem,
+        systems: [previousSystem]
+      });
+    }
+
     // STEP 1: DESTROY current engine completely
     if (this.currentEngine) {
       if (this.currentEngine.setActive) {
@@ -22,10 +43,13 @@ export class CanvasManager {
       }
       console.log('💥 Old engine destroyed');
     }
-    
-    // STEP 2: DESTROY old WebGL contexts 
+
+    this.currentEngine = null;
+    this.currentSystem = null;
+
+    // STEP 2: DESTROY old WebGL contexts
     this.destroyOldWebGLContexts();
-    
+
     // STEP 3: DESTROY all canvases + CREATE 5 fresh ones
     this.destroyAllCanvasesAndCreateFresh(systemName);
     
@@ -36,11 +60,41 @@ export class CanvasManager {
     if (engine && engine.setActive) {
       engine.setActive(true);
     }
-    
+
     this.currentSystem = systemName;
     this.currentEngine = engine;
+
+    this.handleResize();
     console.log(`✅ DESTROY → CREATE complete: ${systemName} ready`);
+
+    this.dispatchSystemEvent('vib34d:system-activated', {
+      systemName,
+      systems: [systemName],
+      engineReady: !!engine
+    });
+
     return engine;
+  }
+
+  dispatchSystemEvent(eventName, detail = {}) {
+    if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') {
+      return;
+    }
+
+    try {
+      let event;
+      if (typeof window.CustomEvent === 'function') {
+        event = new window.CustomEvent(eventName, { detail });
+      } else if (typeof document !== 'undefined' && typeof document.createEvent === 'function') {
+        event = document.createEvent('CustomEvent');
+        event.initCustomEvent(eventName, false, false, detail);
+      } else {
+        return;
+      }
+      window.dispatchEvent(event);
+    } catch (error) {
+      console.warn('⚠️ Failed to dispatch system event', eventName, error);
+    }
   }
 
   destroyOldWebGLContexts() {
@@ -146,7 +200,7 @@ export class CanvasManager {
   
   getCanvasIdsForSystem(systemName) {
     const baseIds = ['background-canvas', 'shadow-canvas', 'content-canvas', 'highlight-canvas', 'accent-canvas'];
-    
+
     switch (systemName) {
       case 'faceted':
         return baseIds;
@@ -160,7 +214,83 @@ export class CanvasManager {
         return baseIds;
     }
   }
-  
+
+  getActiveContainer() {
+    if (typeof document === 'undefined') {
+      return null;
+    }
+
+    const targetId = this.currentSystem === 'faceted' ? 'vib34dLayers' : `${this.currentSystem}Layers`;
+    return document.getElementById(targetId) || null;
+  }
+
+  getViewportDimensions() {
+    if (typeof window === 'undefined') {
+      return { width: 0, height: 0 };
+    }
+
+    return {
+      width: Math.max(0, Math.floor(window.innerWidth || 0)),
+      height: Math.max(0, Math.floor(window.innerHeight || 0))
+    };
+  }
+
+  handleResize() {
+    if (!this.currentSystem || typeof window === 'undefined') {
+      return;
+    }
+
+    const container = this.getActiveContainer();
+    const viewport = this.getViewportDimensions();
+    const width = Math.max(1, Math.floor(container?.clientWidth || viewport.width || 1));
+    const height = Math.max(1, Math.floor(container?.clientHeight || viewport.height || 1));
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+    const canvasIds = this.getCanvasIdsForSystem(this.currentSystem);
+
+    canvasIds.forEach(canvasId => {
+      const canvas = typeof document !== 'undefined' ? document.getElementById(canvasId) : null;
+      if (!canvas) {
+        return;
+      }
+
+      const pixelWidth = Math.max(1, Math.round(width * dpr));
+      const pixelHeight = Math.max(1, Math.round(height * dpr));
+
+      if (canvas.width !== pixelWidth) {
+        canvas.width = pixelWidth;
+      }
+      if (canvas.height !== pixelHeight) {
+        canvas.height = pixelHeight;
+      }
+
+      if (canvas.style) {
+        canvas.style.width = `${width}px`;
+        canvas.style.height = `${height}px`;
+      }
+    });
+
+    if (this.currentEngine && typeof this.currentEngine.resize === 'function') {
+      try {
+        this.currentEngine.resize({ width, height, dpr });
+      } catch (error) {
+        console.warn('⚠️ Active engine resize handler failed', error);
+      }
+    }
+  }
+
+  destroy() {
+    if (this.boundResizeHandler && typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+      window.removeEventListener('resize', this.boundResizeHandler, this.resizeEventOptions);
+
+      try {
+        window.removeEventListener('orientationchange', this.boundResizeHandler, this.resizeEventOptions);
+      } catch (error) {
+        // Ignore orientation removal failures
+      }
+    }
+  }
+
   async createFreshEngine(systemName, engineClasses) {
     console.log(`🚀 Creating fresh ${systemName} engine`);
     
