@@ -16,6 +16,7 @@ A focused SDK extracting VIB34D's quaternion mathematics and XR sensor integrati
 - **Sensor Schema Registry**: Normalizes quaternion data from XR devices
 - **AR Visor Adapter**: Processes spatial tracking and pose data
 - **Shader Quaternion Synchronizer**: GPU-ready quaternion-to-matrix conversion
+- **Quaternion Pose Registry Synchronizer**: Bridges the shared pose registry into shader parameter updates so headset/controller quaternions stay aligned across runtimes.
 - **Sensory Input Bridge**: Centralizes XR sensor routing
 - **WebXR Quaternion Bridge**: Streams XRFrame poses, rotor snapshots, and audio bands into the WebGPU glass composer
 - **Glass Uniform Controller**: Centralizes localization ingestion, rotor fusion, and uniform ring updates for both preview and production WebXR pipelines
