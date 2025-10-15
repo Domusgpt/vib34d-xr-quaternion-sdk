@@ -3,7 +3,7 @@
  * WebGL-based renderer for individual holographic layers
  */
 
-import { GeometryLibrary } from '../geometry/GeometryLibrary.js';
+import { GeometryManager, ProjectionManager, ShaderManager } from './shaders/DynamicShaderModules.js';
 
 export class IntegratedHolographicVisualizer {
     constructor(canvasId, role, reactivity, variant) {
@@ -39,22 +39,44 @@ export class IntegratedHolographicVisualizer {
         this.mouseIntensity = 0.0;
         this.clickIntensity = 0.0;
         this.startTime = Date.now();
-        
+
         // Default parameters
         this.params = {
             geometry: 0,
+            geometryType: 'hypercube',
+            projectionMethod: 'perspective',
+            shaderProgramName: 'maleficarumViz',
             gridDensity: 15,
             morphFactor: 1.0,
             chaos: 0.2,
             speed: 1.0,
+            rotationSpeed: 0.2,
             hue: 200,
             intensity: 0.5,
             saturation: 0.8,
             dimension: 3.5,
             rot4dXW: 0.0,
             rot4dYW: 0.0,
-            rot4dZW: 0.0
+            rot4dZW: 0.0,
+            universeModifier: 1.0,
+            patternIntensity: 1.0,
+            lineThickness: 0.03,
+            shellWidth: 0.025,
+            tetraThickness: 0.035,
+            glitchIntensity: 0.0,
+            colorShift: 0.0,
+            primaryColor: [1.0, 0.2, 0.8],
+            secondaryColor: [0.2, 1.0, 1.0],
+            backgroundColor: [0.05, 0.0, 0.2],
+            audioBass: 0.0,
+            audioMid: 0.0,
+            audioHigh: 0.0
         };
+
+        this.geometryManager = null;
+        this.projectionManager = null;
+        this.shaderManager = null;
+        this.attributeLocations = {};
         
         // Initialization now happens in ensureCanvasSizedThenInitWebGL after sizing
         // this.init(); // MOVED
@@ -149,6 +171,16 @@ export class IntegratedHolographicVisualizer {
      * Initialize WebGL rendering pipeline
      */
     init() {
+        if (!this.geometryManager) {
+            this.geometryManager = new GeometryManager();
+        }
+        if (!this.projectionManager) {
+            this.projectionManager = new ProjectionManager();
+        }
+        if (!this.shaderManager && this.gl) {
+            this.shaderManager = new ShaderManager(this.gl, this.geometryManager, this.projectionManager);
+        }
+
         this.initShaders();
         this.initBuffers();
         this.resize();
@@ -158,192 +190,59 @@ export class IntegratedHolographicVisualizer {
      * Initialize shaders with 4D mathematics
      */
     initShaders() {
-        const vertexShaderSource = `attribute vec2 a_position;
-void main() {
-    gl_Position = vec4(a_position, 0.0, 1.0);
-}`;
-        
-        const fragmentShaderSource = `precision highp float;
+        this.rebuildShaderProgram();
+    }
 
-uniform vec2 u_resolution;
-uniform float u_time;
-uniform vec2 u_mouse;
-uniform float u_geometry;
-uniform float u_gridDensity;
-uniform float u_morphFactor;
-uniform float u_chaos;
-uniform float u_speed;
-uniform float u_hue;
-uniform float u_intensity;
-uniform float u_saturation;
-uniform float u_dimension;
-uniform float u_rot4dXW;
-uniform float u_rot4dYW;
-uniform float u_rot4dZW;
-uniform float u_mouseIntensity;
-uniform float u_clickIntensity;
-uniform float u_roleIntensity;
+    rebuildShaderProgram() {
+        if (!this.shaderManager) {
+            return;
+        }
 
-// 4D rotation matrices
-mat4 rotateXW(float theta) {
-    float c = cos(theta);
-    float s = sin(theta);
-    return mat4(c, 0.0, 0.0, -s, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, s, 0.0, 0.0, c);
-}
+        const programName = this.params.shaderProgramName || 'maleficarumViz';
+        const geometryType = this.params.geometryType || 'hypercube';
+        const projectionMethod = this.params.projectionMethod || 'perspective';
 
-mat4 rotateYW(float theta) {
-    float c = cos(theta);
-    float s = sin(theta);
-    return mat4(1.0, 0.0, 0.0, 0.0, 0.0, c, 0.0, -s, 0.0, 0.0, 1.0, 0.0, 0.0, s, 0.0, c);
-}
+        const program = this.shaderManager.createDynamicProgram(programName, geometryType, projectionMethod);
+        if (!program) {
+            console.error('Failed to compile dynamic shader program');
+            return;
+        }
 
-mat4 rotateZW(float theta) {
-    float c = cos(theta);
-    float s = sin(theta);
-    return mat4(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, c, -s, 0.0, 0.0, s, c);
-}
+        this.program = program;
+        this.shaderManager.useProgram(programName);
 
-vec3 project4Dto3D(vec4 p) {
-    float w = 2.5 / (2.5 + p.w);
-    return vec3(p.x * w, p.y * w, p.z * w);
-}
-
-// Simplified geometry functions for WebGL 1.0 compatibility (ORIGINAL FACETED)
-float geometryFunction(vec4 p) {
-    int geomType = int(u_geometry);
-    
-    if (geomType == 0) {
-        // Tetrahedron lattice - UNIFORM GRID DENSITY
-        vec4 pos = fract(p * u_gridDensity * 0.08);
-        vec4 dist = min(pos, 1.0 - pos);
-        return min(min(dist.x, dist.y), min(dist.z, dist.w)) * u_morphFactor;
-    }
-    else if (geomType == 1) {
-        // Hypercube lattice - UNIFORM GRID DENSITY
-        vec4 pos = fract(p * u_gridDensity * 0.08);
-        vec4 dist = min(pos, 1.0 - pos);
-        float minDist = min(min(dist.x, dist.y), min(dist.z, dist.w));
-        return minDist * u_morphFactor;
-    }
-    else if (geomType == 2) {
-        // Sphere lattice - UNIFORM GRID DENSITY
-        float r = length(p);
-        float density = u_gridDensity * 0.08;
-        float spheres = abs(fract(r * density) - 0.5) * 2.0;
-        float theta = atan(p.y, p.x);
-        float harmonics = sin(theta * 3.0) * 0.2;
-        return (spheres + harmonics) * u_morphFactor;
-    }
-    else if (geomType == 3) {
-        // Torus lattice - UNIFORM GRID DENSITY
-        float r1 = length(p.xy) - 2.0;
-        float torus = length(vec2(r1, p.z)) - 0.8;
-        float lattice = sin(p.x * u_gridDensity * 0.08) * sin(p.y * u_gridDensity * 0.08);
-        return (torus + lattice * 0.3) * u_morphFactor;
-    }
-    else if (geomType == 4) {
-        // Klein bottle lattice - UNIFORM GRID DENSITY
-        float u = atan(p.y, p.x);
-        float v = atan(p.w, p.z);
-        float dist = length(p) - 2.0;
-        float lattice = sin(u * u_gridDensity * 0.08) * sin(v * u_gridDensity * 0.08);
-        return (dist + lattice * 0.4) * u_morphFactor;
-    }
-    else if (geomType == 5) {
-        // Fractal lattice - NOW WITH UNIFORM GRID DENSITY
-        vec4 pos = fract(p * u_gridDensity * 0.08);
-        pos = abs(pos * 2.0 - 1.0);
-        float dist = length(max(abs(pos) - 1.0, 0.0));
-        return dist * u_morphFactor;
-    }
-    else if (geomType == 6) {
-        // Wave lattice - UNIFORM GRID DENSITY
-        float freq = u_gridDensity * 0.08;
-        float time = u_time * 0.001 * u_speed;
-        float wave1 = sin(p.x * freq + time);
-        float wave2 = sin(p.y * freq + time * 1.3);
-        float wave3 = sin(p.z * freq * 0.8 + time * 0.7); // Add Z-dimension waves
-        float interference = wave1 * wave2 * wave3;
-        return interference * u_morphFactor;
-    }
-    else if (geomType == 7) {
-        // Crystal lattice - UNIFORM GRID DENSITY
-        vec4 pos = fract(p * u_gridDensity * 0.08) - 0.5;
-        float cube = max(max(abs(pos.x), abs(pos.y)), max(abs(pos.z), abs(pos.w)));
-        return cube * u_morphFactor;
-    }
-    else {
-        // Default hypercube - UNIFORM GRID DENSITY
-        vec4 pos = fract(p * u_gridDensity * 0.08);
-        vec4 dist = min(pos, 1.0 - pos);
-        return min(min(dist.x, dist.y), min(dist.z, dist.w)) * u_morphFactor;
-    }
-}
-
-void main() {
-    vec2 uv = (gl_FragCoord.xy - u_resolution.xy * 0.5) / min(u_resolution.x, u_resolution.y);
-    
-    // 4D position with mouse interaction - NOW USING SPEED PARAMETER
-    float timeSpeed = u_time * 0.0001 * u_speed;
-    vec4 pos = vec4(uv * 3.0, sin(timeSpeed * 3.0), cos(timeSpeed * 2.0));
-    pos.xy += (u_mouse - 0.5) * u_mouseIntensity * 2.0;
-    
-    // Apply 4D rotations
-    pos = rotateXW(u_rot4dXW) * pos;
-    pos = rotateYW(u_rot4dYW) * pos;
-    pos = rotateZW(u_rot4dZW) * pos;
-    
-    // Calculate geometry value
-    float value = geometryFunction(pos);
-    
-    // Apply chaos
-    float noise = sin(pos.x * 7.0) * cos(pos.y * 11.0) * sin(pos.z * 13.0);
-    value += noise * u_chaos;
-    
-    // Color based on geometry value and hue with user-controlled intensity/saturation
-    float geometryIntensity = 1.0 - clamp(abs(value), 0.0, 1.0);
-    geometryIntensity += u_clickIntensity * 0.3;
-    
-    // Apply user intensity control
-    float finalIntensity = geometryIntensity * u_intensity;
-    
-    float hue = u_hue / 360.0 + value * 0.1;
-    
-    // Create color with saturation control
-    vec3 baseColor = vec3(
-        sin(hue * 6.28318 + 0.0) * 0.5 + 0.5,
-        sin(hue * 6.28318 + 2.0943) * 0.5 + 0.5,
-        sin(hue * 6.28318 + 4.1887) * 0.5 + 0.5
-    );
-    
-    // Apply saturation (mix with grayscale)
-    float gray = (baseColor.r + baseColor.g + baseColor.b) / 3.0;
-    vec3 color = mix(vec3(gray), baseColor, u_saturation) * finalIntensity;
-    
-    gl_FragColor = vec4(color, finalIntensity * u_roleIntensity);
-}`;
-        
-        this.program = this.createProgram(vertexShaderSource, fragmentShaderSource);
-        this.uniforms = {
-            resolution: this.gl.getUniformLocation(this.program, 'u_resolution'),
-            time: this.gl.getUniformLocation(this.program, 'u_time'),
-            mouse: this.gl.getUniformLocation(this.program, 'u_mouse'),
-            geometry: this.gl.getUniformLocation(this.program, 'u_geometry'),
-            gridDensity: this.gl.getUniformLocation(this.program, 'u_gridDensity'),
-            morphFactor: this.gl.getUniformLocation(this.program, 'u_morphFactor'),
-            chaos: this.gl.getUniformLocation(this.program, 'u_chaos'),
-            speed: this.gl.getUniformLocation(this.program, 'u_speed'),
-            hue: this.gl.getUniformLocation(this.program, 'u_hue'),
-            intensity: this.gl.getUniformLocation(this.program, 'u_intensity'),
-            saturation: this.gl.getUniformLocation(this.program, 'u_saturation'),
-            dimension: this.gl.getUniformLocation(this.program, 'u_dimension'),
-            rot4dXW: this.gl.getUniformLocation(this.program, 'u_rot4dXW'),
-            rot4dYW: this.gl.getUniformLocation(this.program, 'u_rot4dYW'),
-            rot4dZW: this.gl.getUniformLocation(this.program, 'u_rot4dZW'),
-            mouseIntensity: this.gl.getUniformLocation(this.program, 'u_mouseIntensity'),
-            clickIntensity: this.gl.getUniformLocation(this.program, 'u_clickIntensity'),
-            roleIntensity: this.gl.getUniformLocation(this.program, 'u_roleIntensity')
+        const uniformMap = {
+            resolution: 'u_resolution',
+            time: 'u_time',
+            dimension: 'u_dimension',
+            morphFactor: 'u_morphFactor',
+            rotationSpeed: 'u_rotationSpeed',
+            universeModifier: 'u_universeModifier',
+            patternIntensity: 'u_patternIntensity',
+            gridDensity: 'u_gridDensity',
+            lineThickness: 'u_lineThickness',
+            shellWidth: 'u_shellWidth',
+            tetraThickness: 'u_tetraThickness',
+            audioBass: 'u_audioBass',
+            audioMid: 'u_audioMid',
+            audioHigh: 'u_audioHigh',
+            glitchIntensity: 'u_glitchIntensity',
+            colorShift: 'u_colorShift',
+            primaryColor: 'u_primaryColor',
+            secondaryColor: 'u_secondaryColor',
+            backgroundColor: 'u_backgroundColor'
         };
+
+        this.uniforms = {};
+        Object.entries(uniformMap).forEach(([key, uniformName]) => {
+            this.uniforms[key] = this.shaderManager.getUniformLocation(uniformName);
+        });
+
+        this.attributeLocations.position = this.shaderManager.getAttributeLocation('a_position');
+
+        if (this.buffer) {
+            this.initBuffers();
+        }
     }
     
     /**
@@ -424,12 +323,16 @@ void main() {
      */
     initBuffers() {
         const positions = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
-        
-        this.buffer = this.gl.createBuffer();
-        this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.buffer);
-        this.gl.bufferData(this.gl.ARRAY_BUFFER, positions, this.gl.STATIC_DRAW);
-        
-        const positionLocation = this.gl.getAttribLocation(this.program, 'a_position');
+
+        if (!this.buffer) {
+            this.buffer = this.gl.createBuffer();
+            this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.buffer);
+            this.gl.bufferData(this.gl.ARRAY_BUFFER, positions, this.gl.STATIC_DRAW);
+        } else {
+            this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.buffer);
+        }
+
+        const positionLocation = this.attributeLocations.position ?? this.gl.getAttribLocation(this.program, 'a_position');
         this.gl.enableVertexAttribArray(positionLocation);
         this.gl.vertexAttribPointer(positionLocation, 2, this.gl.FLOAT, false, 0, 0);
     }
@@ -517,12 +420,65 @@ void main() {
             this.canvas.parentNode.insertBefore(errorDiv, this.canvas.nextSibling);
         }
     }
-    
+
+    /**
+     * Map legacy geometry indices to dynamic shader geometry identifiers.
+     */
+    mapGeometryIndexToType(index) {
+        const mapping = {
+            0: 'hypertetrahedron',
+            1: 'hypercube',
+            2: 'hypersphere'
+        };
+        return mapping[index] || this.params.geometryType || 'hypercube';
+    }
+
     /**
      * Update visualization parameters
      */
     updateParameters(params) {
-        this.params = { ...this.params, ...params };
+        const derivedParams = { ...params };
+
+        if (typeof params.geometry === 'number' && params.geometryType === undefined) {
+            derivedParams.geometryType = this.mapGeometryIndexToType(params.geometry);
+        }
+
+        const prevGeometryType = this.params.geometryType;
+        const prevProjection = this.params.projectionMethod;
+        const prevProgram = this.params.shaderProgramName;
+
+        this.params = { ...this.params, ...derivedParams };
+
+        const needsRebuild = (
+            this.params.geometryType !== prevGeometryType ||
+            this.params.projectionMethod !== prevProjection ||
+            this.params.shaderProgramName !== prevProgram
+        );
+
+        if (needsRebuild && this.gl) {
+            this.rebuildShaderProgram();
+        }
+    }
+
+    setUniform1f(key, value) {
+        const location = this.uniforms?.[key];
+        if (location) {
+            this.gl.uniform1f(location, value);
+        }
+    }
+
+    setUniform2f(key, v0, v1) {
+        const location = this.uniforms?.[key];
+        if (location) {
+            this.gl.uniform2f(location, v0, v1);
+        }
+    }
+
+    setUniform3f(key, v0, v1, v2) {
+        const location = this.uniforms?.[key];
+        if (location) {
+            this.gl.uniform3f(location, v0, v1, v2);
+        }
     }
     
     /**
@@ -575,49 +531,51 @@ void main() {
             return;
         }
         
-        // Role-specific intensity (ORIGINAL FACETED VALUES)
-        const roleIntensities = {
-            'background': 0.3,
-            'shadow': 0.5,
-            'content': 0.8,
-            'highlight': 1.0,
-            'accent': 1.2
-        };
-        
-        const time = Date.now() - this.startTime;
-        
-        // Set uniforms
-        this.gl.uniform2f(this.uniforms.resolution, this.canvas.width, this.canvas.height);
-        this.gl.uniform1f(this.uniforms.time, time);
-        this.gl.uniform2f(this.uniforms.mouse, this.mouseX, this.mouseY);
-        this.gl.uniform1f(this.uniforms.geometry, this.params.geometry);
-        // 🎵 DIRECT AUDIO REACTIVITY - Simple and works
-        let gridDensity = this.params.gridDensity;
-        let hue = this.params.hue;
-        let intensity = this.params.intensity;
-        
-        if (window.audioEnabled && window.audioReactive) {
-            // Faceted audio mapping: Bass affects grid density, Mid affects hue, High affects intensity
-            gridDensity += window.audioReactive.bass * 30;  // Bass makes patterns denser
-            hue += window.audioReactive.mid * 60;           // Mid frequencies shift colors
-            intensity += window.audioReactive.high * 0.4;   // High frequencies brighten
-        }
-        
-        this.gl.uniform1f(this.uniforms.gridDensity, Math.min(100, gridDensity));
-        this.gl.uniform1f(this.uniforms.morphFactor, this.params.morphFactor);
-        this.gl.uniform1f(this.uniforms.chaos, this.params.chaos);
-        this.gl.uniform1f(this.uniforms.speed, this.params.speed);
-        this.gl.uniform1f(this.uniforms.hue, hue % 360);
-        this.gl.uniform1f(this.uniforms.intensity, Math.min(1, intensity));
-        this.gl.uniform1f(this.uniforms.saturation, this.params.saturation);
-        this.gl.uniform1f(this.uniforms.dimension, this.params.dimension);
-        this.gl.uniform1f(this.uniforms.rot4dXW, this.params.rot4dXW);
-        this.gl.uniform1f(this.uniforms.rot4dYW, this.params.rot4dYW);
-        this.gl.uniform1f(this.uniforms.rot4dZW, this.params.rot4dZW);
-        this.gl.uniform1f(this.uniforms.mouseIntensity, this.mouseIntensity);
-        this.gl.uniform1f(this.uniforms.clickIntensity, this.clickIntensity);
-        this.gl.uniform1f(this.uniforms.roleIntensity, roleIntensities[this.role] || 1.0);
-        
+        const timeSeconds = (Date.now() - this.startTime) / 1000;
+
+        // Set uniforms for the dynamic shader
+        this.setUniform2f('resolution', this.canvas.width, this.canvas.height);
+        this.setUniform1f('time', timeSeconds);
+
+        const audioReactive = (window.audioEnabled && window.audioReactive) ? window.audioReactive : null;
+        const audioBass = audioReactive?.bass ?? this.params.audioBass ?? 0;
+        const audioMid = audioReactive?.mid ?? this.params.audioMid ?? 0;
+        const audioHigh = audioReactive?.high ?? this.params.audioHigh ?? 0;
+
+        const gridDensityBase = this.params.gridDensity;
+        const gridDensity = Math.max(0.1, gridDensityBase * (1.0 + audioBass * 0.4));
+        const morphFactor = this.params.morphFactor;
+        const rotationSpeed = (this.params.rotationSpeed ?? this.params.speed ?? 0.2) * (1.0 + audioHigh * 0.15);
+        const universeModifier = this.params.universeModifier;
+        const patternIntensity = this.params.patternIntensity * (1.0 + audioMid * 0.2);
+
+        this.setUniform1f('gridDensity', gridDensity);
+        this.setUniform1f('morphFactor', morphFactor);
+        this.setUniform1f('rotationSpeed', rotationSpeed);
+        this.setUniform1f('universeModifier', universeModifier);
+        this.setUniform1f('patternIntensity', patternIntensity);
+        this.setUniform1f('dimension', this.params.dimension);
+        this.setUniform1f('lineThickness', this.params.lineThickness);
+        this.setUniform1f('shellWidth', this.params.shellWidth);
+        this.setUniform1f('tetraThickness', this.params.tetraThickness);
+        this.setUniform1f('audioBass', audioBass);
+        this.setUniform1f('audioMid', audioMid);
+        this.setUniform1f('audioHigh', audioHigh);
+        this.setUniform1f('glitchIntensity', this.params.glitchIntensity);
+        this.setUniform1f('colorShift', this.params.colorShift);
+
+        const primary = this.params.primaryColor || [1.0, 0.2, 0.8];
+        const secondary = this.params.secondaryColor || [0.2, 1.0, 1.0];
+        const background = this.params.backgroundColor || [0.05, 0.0, 0.2];
+
+        this.setUniform3f('primaryColor', primary[0], primary[1], primary[2]);
+        this.setUniform3f('secondaryColor', secondary[0], secondary[1], secondary[2]);
+        this.setUniform3f('backgroundColor', background[0], background[1], background[2]);
+
+        this.params.audioBass = audioBass;
+        this.params.audioMid = audioMid;
+        this.params.audioHigh = audioHigh;
+
         try {
             this.gl.drawArrays(this.gl.TRIANGLE_STRIP, 0, 4);
             
@@ -643,6 +601,10 @@ void main() {
         this.program = null;
         this.buffer = null;
         this.uniforms = null;
+        this.shaderManager = null;
+        this.geometryManager = null;
+        this.projectionManager = null;
+        this.attributeLocations = {};
         this.gl = null;
         
         // CRITICAL FIX: Don't create new context - CanvasManager already did this
