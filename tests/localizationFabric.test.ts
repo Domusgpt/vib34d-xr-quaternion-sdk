@@ -129,4 +129,127 @@ describe('Localization quaternion fabric', () => {
     });
     expect(fallback.confidence).toBeGreaterThan(0);
   });
+
+  it('down-weights low reliability anchors before fusion', () => {
+    const bridge = new LocalizationBridge({ timeSource });
+    const router = new QuaternionFabricRouter({ historyLimit: 4, timeSource });
+    const fusion = new RotorFusionService({ smoothing: 0 });
+
+    const stageSnapshot = bridge.ingest({
+      source: 'openxr-stage',
+      timestamp: 1800,
+      referenceSpace: 'local-floor',
+      stageTransform: {
+        orientation: { x: 0, y: 0.2588, z: 0, w: 0.9659 },
+        position: { x: 0.25, y: 0.12, z: -0.15 }
+      },
+      accuracy: 0.92,
+      mappingStatus: 'mapped',
+      trackingState: 'tracking',
+      drift: 0.04
+    });
+
+    const anchorSnapshot = bridge.ingest({
+      source: 'spatial-anchor',
+      timestamp: 1802,
+      referenceSpace: 'local-floor',
+      trackingState: 'lost',
+      drift: 0.18,
+      anchor: {
+        id: 'anchor-low-reliability',
+        accuracy: 0.22,
+        reliability: 'low',
+        transform: {
+          orientation: { x: 0, y: 0, z: 0.3827, w: 0.9239 },
+          position: { x: 0.3, y: 0.4, z: -0.05 }
+        }
+      }
+    });
+
+    expect(stageSnapshot).not.toBeNull();
+    expect(anchorSnapshot).not.toBeNull();
+
+    const stageChannel = stageSnapshot ? router.ingest(stageSnapshot) : null;
+    const anchorChannel = anchorSnapshot ? router.ingest(anchorSnapshot) : null;
+
+    expect(stageChannel).not.toBeNull();
+    expect(anchorChannel).not.toBeNull();
+    expect(stageChannel!.confidence).toBeGreaterThan(anchorChannel!.confidence);
+
+    const summary = router.summarize();
+    expect(summary.channelCount).toBe(2);
+    expect(summary.overallConfidence).toBeGreaterThan(anchorChannel!.confidence);
+
+    const fused = fusion.update({
+      channel: anchorChannel,
+      orientation: fromAxisAngle([0, 0, 1], Math.PI / 3),
+      frameTime: 1.802,
+      deltaTime: 0.016
+    });
+
+    expect(fused.reliabilityWeight).toBeCloseTo(0.4, 2);
+    expect(fused.confidence).toBeLessThan(stageChannel!.confidence);
+    expect(fused.localizationUniform[1]).toBeLessThan(0.3);
+  });
+
+  it('arbitrates competing anchors using confidence, reliability, and recency', () => {
+    let clock = 2400;
+    const now = () => clock;
+    const bridge = new LocalizationBridge({ timeSource: now });
+    const router = new QuaternionFabricRouter({ timeSource: now });
+
+    const freshAnchor = bridge.ingest({
+      source: 'spatial-anchor',
+      timestamp: 2385,
+      referenceSpace: 'local-floor',
+      drift: 0.04,
+      anchor: {
+        id: 'anchor-fresh',
+        accuracy: 0.68,
+        reliability: 'high',
+        transform: {
+          orientation: { x: 0, y: 0, z: 0, w: 1 },
+          position: { x: 0.1, y: 0.3, z: -0.2 }
+        }
+      }
+    });
+
+    clock = 2400;
+    const staleAnchor = bridge.ingest({
+      source: 'spatial-anchor',
+      timestamp: 2250,
+      referenceSpace: 'local-floor',
+      trackingState: 'limited',
+      drift: 0.22,
+      anchor: {
+        id: 'anchor-stale',
+        accuracy: 0.82,
+        reliability: 'medium',
+        transform: {
+          orientation: { x: 0, y: 0.2588, z: 0, w: 0.9659 },
+          position: { x: -0.4, y: 0.6, z: 0.2 }
+        }
+      }
+    });
+
+    expect(freshAnchor).not.toBeNull();
+    expect(staleAnchor).not.toBeNull();
+
+    const freshChannel = freshAnchor ? router.ingest(freshAnchor) : null;
+    const staleChannel = staleAnchor ? router.ingest(staleAnchor) : null;
+    expect(freshChannel).not.toBeNull();
+    expect(staleChannel).not.toBeNull();
+
+    const preferred = router.selectPreferredChannel({ referenceSpace: 'local-floor' });
+    expect(preferred?.anchorId).toBe('anchor-fresh');
+    expect(preferred?.recencyMs).toBeLessThan(staleChannel!.recencyMs);
+
+    const summaries = router.summarizeAnchors();
+    expect(summaries.length).toBe(2);
+    expect(summaries[0].representative.anchorId).toBe('anchor-fresh');
+    expect(summaries[0].score).toBeGreaterThan(summaries[1].score);
+
+    const fallback = router.selectPreferredChannel({ anchorId: 'unknown', allowFallback: true });
+    expect(fallback?.key).toBe(preferred?.key);
+  });
 });
