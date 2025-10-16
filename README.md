@@ -16,6 +16,8 @@ A focused SDK extracting VIB34D's quaternion mathematics and XR sensor integrati
 - **Sensor Schema Registry**: Normalizes quaternion data from XR devices
 - **AR Visor Adapter**: Processes spatial tracking and pose data
 - **Shader Quaternion Synchronizer**: GPU-ready quaternion-to-matrix conversion
+- **Quaternion Pose Registry Synchronizer**: Bridges the shared pose registry into shader parameter updates so headset/controller quaternions stay aligned across runtimes.
+- **Pose Registry Ingestion**: `createAdaptiveSDK` now exposes a shared `poseRegistry`, automatically wiring `spatial.pose-frame` and `spatial.pose` channels into the quaternion device registry for downstream synchronizers.
 - **Sensory Input Bridge**: Centralizes XR sensor routing
 - **WebXR Quaternion Bridge**: Streams XRFrame poses, rotor snapshots, and audio bands into the WebGPU glass composer
 - **Glass Uniform Controller**: Centralizes localization ingestion, rotor fusion, and uniform ring updates for both preview and production WebXR pipelines
@@ -36,6 +38,46 @@ A focused SDK extracting VIB34D's quaternion mathematics and XR sensor integrati
 - **License Manager**: Attestation profiles for enterprise/studio/indie tiers
 - **Telemetry System**: Privacy-compliant event tracking
 - **Commercialization Analytics**: KPI reporting and snapshot storage
+- **Telemetry Facade**: Chainable `telemetryControls` wrappers for provider registration, consent updates, and commercialization helpers.
+
+```javascript
+import { createAdaptiveSDK } from 'vib34d-xr-quaternion-sdk';
+
+const sdk = createAdaptiveSDK({
+  telemetry: { defaultConsent: { analytics: false } }
+});
+
+// Telemetry facade mirrors harness helpers but returns the engine for easy chaining.
+sdk.telemetryControls
+  .registerTelemetryProvider(myProvider)
+  .registerTelemetryRequestMiddleware(createSigningMiddleware());
+
+// Snapshot utilities and audit helpers are accessible through the same facade.
+const summary = sdk.telemetryControls.getCommercializationSummary();
+const auditTrail = sdk.telemetryControls.getAuditTrail();
+
+// Pose registry helpers expose normalized quaternion samples from sensory channels.
+const poseRegistry = sdk.poseRegistry;
+if (poseRegistry) {
+  const headset = poseRegistry.getDevice('headset-primary');
+  console.log('Headset reliability', headset?.reliability);
+}
+
+// Build a registry synchronizer that streams headset/controller quaternions into shaders.
+const poseSynchronizer = sdk.createQuaternionPoseRegistrySynchronizer({
+  minConfidence: 0.25,
+  synchronizerOptions: {
+    systems: {},
+  },
+});
+poseSynchronizer.start();
+```
+
+### TypeScript Support
+
+- `types/adaptive-sdk.d.ts` ships alongside the runtime so partners get rich IntelliSense for `createAdaptiveSDK`, telemetry controls, and licensing helpers.
+- The telemetry facade export (`vib34d-xr-quaternion-sdk/product/telemetry/facade`) now advertises matching declaration files, letting teams author middleware and providers without casting to `any`.
+- Add `"moduleResolution": "bundler"` (already configured in this repo) and point your tooling at the published package to consume the declarations.
 
 ## 📂 Repository Structure
 
