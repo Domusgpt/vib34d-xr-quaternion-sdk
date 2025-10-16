@@ -16,6 +16,9 @@ A focused SDK extracting VIB34D's quaternion mathematics and XR sensor integrati
 - **Sensor Schema Registry**: Normalizes quaternion data from XR devices
 - **AR Visor Adapter**: Processes spatial tracking and pose data
 - **Shader Quaternion Synchronizer**: GPU-ready quaternion-to-matrix conversion
+- **Quaternion Pose Registry Synchronizer**: Bridges the shared pose registry into shader parameter updates so headset/controller quaternions stay aligned across runtimes.
+- **Pose Registry Ingestion**: `createAdaptiveSDK` now exposes a shared `poseRegistry`, automatically wiring `spatial.pose-frame` and `spatial.pose` channels into the quaternion device registry for downstream synchronizers.
+- **Pose Reliability Monitor**: Optional `poseReliabilityMonitor` watches registry confidence, surfaces degraded/stale/lost devices, and emits telemetry recovery events.
 - **Sensory Input Bridge**: Centralizes XR sensor routing
 - **WebXR Quaternion Bridge**: Streams XRFrame poses, rotor snapshots, and audio bands into the WebGPU glass composer
 - **Glass Uniform Controller**: Centralizes localization ingestion, rotor fusion, and uniform ring updates for both preview and production WebXR pipelines
@@ -24,7 +27,7 @@ A focused SDK extracting VIB34D's quaternion mathematics and XR sensor integrati
 - **Glass Pipeline Factory**: Builds reusable bind group layouts, pipelines, and samplers so preview and runtime harnesses share identical shading configuration.【F:src/ui/adaptive/renderers/webgpu/GlassPipelineFactory.ts†L1-L309】
 - **WebXR Glass Session Harness**: Drives immersive sessions with triple-buffered uniforms, per-view layer targets, and XRGPUBinding management for WebGPU rendering.【F:src/ui/adaptive/renderers/webgpu/WebXRGlassSession.ts†L1-L329】
 - **BufferLayout & Polytope Instance Buffer**: Std140/std430 layout planners plus instanced storage helpers that keep WebGPU uniforms and polytopes aligned across CPU and GPU paths.【F:src/ui/adaptive/renderers/webgpu/BufferLayout.ts†L1-L184】【F:src/ui/adaptive/renderers/webgpu/PolytopeInstanceBuffer.ts†L1-L139】
-- **Localization Quaternion Fabric**: `LocalizationBridge`, `QuaternionFabricRouter`, and `RotorFusionService` capture provenance, confidence, and rotor fusion metrics for stage and anchor localization flows.【F:src/ui/adaptive/localization/LocalizationBridge.ts†L1-L323】【F:src/ui/adaptive/localization/QuaternionFabricRouter.ts†L1-L134】【F:src/ui/adaptive/localization/RotorFusionService.ts†L1-L140】
+- **Localization Quaternion Fabric**: `LocalizationBridge`, `QuaternionFabricRouter`, and `RotorFusionService` capture provenance, confidence, and rotor fusion metrics for stage and anchor localization flows. The router now scores anchor channels with reliability/recency heuristics, exposes anchor summaries, and offers a `selectPreferredChannel` helper so shader synchronizers and layout engines can consistently target the healthiest anchor feed.【F:src/ui/adaptive/localization/LocalizationBridge.ts†L1-L323】【F:src/ui/adaptive/localization/QuaternionFabricRouter.ts†L1-L214】【F:src/ui/adaptive/localization/RotorFusionService.ts†L1-L140】
 
 ### Visualization Engines
 - **Faceted System**: 2D pattern generation with 4D rotation controls
@@ -35,7 +38,87 @@ A focused SDK extracting VIB34D's quaternion mathematics and XR sensor integrati
 ### Commercial Features
 - **License Manager**: Attestation profiles for enterprise/studio/indie tiers
 - **Telemetry System**: Privacy-compliant event tracking
+- **Telemetry Batching**: `ProductTelemetryHarness` ships a configurable `TelemetryBatcher` that coalesces events by size/age,
+  retries transient failures, and exposes `flushBatches`/`deliverBatch` helpers through the telemetry facade.
 - **Commercialization Analytics**: KPI reporting and snapshot storage
+- **Telemetry Facade**: Chainable `telemetryControls` wrappers for provider registration, consent updates, commercialization helpers, provider blueprint generation, and export-ready consent bundles.
+
+```javascript
+import { createAdaptiveSDK } from 'vib34d-xr-quaternion-sdk';
+
+const sdk = createAdaptiveSDK({
+  telemetry: {
+    defaultConsent: { analytics: false },
+    batch: {
+      maxSize: 25,
+      maxAgeMs: 7500,
+      preferBatchedDelivery: true
+    }
+  }
+});
+
+// Telemetry facade mirrors harness helpers but returns the engine for easy chaining.
+sdk.telemetryControls
+  .registerTelemetryProvider(myProvider)
+  .registerTelemetryRequestMiddleware(createSigningMiddleware());
+
+// Batch utilities let you drain the queue before shutdown or after partner consent changes.
+await sdk.telemetryControls.flushBatches({ reason: 'session-end' });
+
+// You can also instantiate a standalone batcher when composing bespoke telemetry pipelines.
+import { TelemetryBatcher } from 'vib34d-xr-quaternion-sdk/product/telemetry/batcher';
+const batcher = new TelemetryBatcher({ maxBatchSize: 100, maxBatchAgeMs: 5000 });
+
+// Snapshot utilities and audit helpers are accessible through the same facade.
+const summary = sdk.telemetryControls.getCommercializationSummary();
+const auditTrail = sdk.telemetryControls.getAuditTrail();
+
+// Pose registry helpers expose normalized quaternion samples from sensory channels.
+const poseRegistry = sdk.poseRegistry;
+if (poseRegistry) {
+  const headset = poseRegistry.getDevice('headset-primary');
+  console.log('Headset reliability', headset?.reliability);
+}
+
+// Build a registry synchronizer that streams headset/controller quaternions into shaders.
+const poseSynchronizer = sdk.createQuaternionPoseRegistrySynchronizer({
+  minConfidence: 0.25,
+  synchronizerOptions: {
+    systems: {},
+  },
+});
+poseSynchronizer.start();
+
+// Pose reliability monitor keeps telemetry aware of degraded or stale devices.
+sdk.poseReliabilityMonitor?.evaluate();
+```
+
+### Reference telemetry providers & consent bundles
+
+Use the new `product/telemetry/reference-providers` export to register ready-to-use providers and generate blueprints/consent bundles that align with our documentation:
+
+```javascript
+import {
+  registerReferenceTelemetryProviders,
+  createReferenceTelemetryBlueprints
+} from 'vib34d-xr-quaternion-sdk/product/telemetry/reference-providers';
+
+const blueprints = createReferenceTelemetryBlueprints();
+const registration = registerReferenceTelemetryProviders(sdk.telemetry, {
+  http: { endpoint: 'https://telemetry.partner.example/collect' },
+  consentBundle: { format: 'csv', metadata: { exportedBy: 'sdk-bootstrap' } }
+});
+
+console.log('Console provider retention days', blueprints.console.retentionDays);
+console.log('Consent export format', registration.consentBundle?.format);
+```
+
+### TypeScript Support
+
+- `types/adaptive-sdk.d.ts` ships alongside the runtime so partners get rich IntelliSense for `createAdaptiveSDK`, telemetry controls, and licensing helpers.
+- The telemetry facade export (`vib34d-xr-quaternion-sdk/product/telemetry/facade`) now advertises matching declaration files, letting teams author middleware and providers without casting to `any`.
+- Reference providers expose declarations via `vib34d-xr-quaternion-sdk/product/telemetry/reference-providers`, letting partner teams extend or override the sample catalog without manually copying event descriptors.
+- Add `"moduleResolution": "bundler"` (already configured in this repo) and point your tooling at the published package to consume the declarations.
 
 ## 📂 Repository Structure
 
@@ -161,6 +244,12 @@ All visualization systems share quaternion-driven 4D rotation:
 These map directly to XR device orientations via `ShaderQuaternionSynchronizer`.
 
 When the runtime switches between faceted, quantum, or holographic engines the `CanvasManager` now dispatches `vib34d:system-activated` / `vib34d:system-deactivated` events. The `ShaderQuaternionSynchronizer` listens for those and only streams quaternion updates into the active system, preventing multiple heavy canvases from competing for WebGL/WebGPU resources. To guard against environments that do not emit those lifecycle events, the synchronizer also enforces a single active target by default—you can opt into multi-system streaming by passing `maxActiveSystems` when constructing it. The preview harness mirrors this exclusivity with a radio selector so you can swap the active visualization system without spinning up concurrent canvases. The same manager now watches viewport and orientation changes, resizes the live canvas stack, and notifies the active engine so fidelity stays consistent when users rotate a headset or resize the host window.
+
+## ✅ Quality Automation
+
+- **Coverage Enforcement**: `vitest` now enforces project-wide line and branch minimums; CI runs `pnpm exec vitest run --coverage` so regressions fail immediately when tests slip below the thresholds.【F:vitest.config.ts†L1-L20】【F:.github/workflows/ci.yml†L1-L60】
+- **Bundle Guardrail**: `pnpm run check:bundle` builds the SDK to `dist-ci/` and fails if Web deliverables exceed the configured size ceiling, keeping headset builds lean.【F:tools/ci/bundleSizeCheck.mjs†L1-L156】【F:package.json†L56-L66】
+- **CI Pipeline**: GitHub Actions installs dependencies, runs the TypeScript smoke test, enforces coverage, and executes the bundle-size audit on every push and pull request.【F:.github/workflows/ci.yml†L1-L60】
 
 ## 📖 Documentation
 
