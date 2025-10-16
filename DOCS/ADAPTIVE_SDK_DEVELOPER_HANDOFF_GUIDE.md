@@ -32,9 +32,9 @@ The following steps must be completed before a new team assumes ownership or bef
    - Configure consent defaults through `createConsentPanel` options and confirm telemetry events are gated until consent toggles are enabled.
 
 3. **Telemetry Providers & Middleware**
-   - Register required providers (`ConsoleTelemetryProvider`, `HttpTelemetryProvider`, `PartnerTelemetryProvider`, `ComplianceVaultTelemetryProvider`).
-   - Attach middleware (e.g., `createRequestSigningMiddleware`) and remote storage adapters per deployment environment.
-   - Capture audit trails via `getTelemetryAuditTrail()` and remote vault exports.
+   - Instantiate the SDK and drive provider wiring through `sdk.telemetryControls` so registration, consent updates, and commercialization helpers remain chainable.【F:src/core/AdaptiveSDK.js†L182-L230】【F:src/product/telemetry/createTelemetryFacade.js†L61-L94】
+   - Register required providers (`ConsoleTelemetryProvider`, `HttpTelemetryProvider`, `PartnerTelemetryProvider`, `ComplianceVaultTelemetryProvider`) and chain middleware (e.g., `createRequestSigningMiddleware`) directly on the facade for consistent consent gating.【F:src/product/telemetry/createTelemetryFacade.js†L1-L94】
+   - Export commercialization snapshots and audit trails via the facade helpers (`getCommercializationSummary`, `getAuditTrail`, `exportConsentState`) before packaging partner builds.【F:src/product/telemetry/createTelemetryFacade.js†L14-L24】【F:types/adaptive-sdk.d.ts†L320-L420】
 
 4. **Adaptive Layout & Projection Integration**
    - Choose default layout strategies/annotations and verify blueprint exports using `buildLayoutBlueprint()`.
