@@ -10,7 +10,7 @@ This guide consolidates everything a delivery or partner engineering team needs 
 | Sensory Normalization | Schema registration, sanitization, and lifecycle hooks for gaze, neural, biometric, ambient, and gesture inputs. | `src/ui/adaptive/SensoryInputBridge.js`, `src/ui/adaptive/sensors/SensorSchemaRegistry.js` | [Core Assessment](ADAPTIVE_ENGINE_CORE_ASSESSMENT.md) |
 | Layout & Blueprinting | Pluggable strategies, annotations, and blueprint rendering/export helpers for adaptive UI composition. | `src/ui/adaptive/SpatialLayoutSynthesizer.js`, `src/ui/adaptive/strategies/*`, `src/ui/adaptive/annotations/*`, `src/ui/adaptive/renderers/LayoutBlueprintRenderer.js` | [Layout & Telemetry Modularization Brief](LAYOUT_TELEMETRY_MODULARIZATION_BRIEF.md) |
 | Projection Stack | 4D projection field composition, simulation, cataloging, and validation for wearable-ready experiences. | `src/ui/adaptive/renderers/ProjectionFieldComposer.js`, `src/ui/adaptive/simulators/ProjectionScenarioSimulator.js`, `src/ui/adaptive/simulators/ProjectionScenarioCatalog.js`, `src/ui/adaptive/simulators/ProjectionScenarioValidator.js` | [Architecture Review](ADAPTIVE_ENGINE_ARCHITECTURE_REVIEW.md) |
-| Telemetry & Privacy | Consent-aware telemetry harness, provider interfaces, audit logging, request middleware, and compliance vault exports. | `src/product/ProductTelemetryHarness.js`, `src/product/telemetry/*`, `src/product/telemetry/storage/RemoteStorageAdapters.js` | [Telemetry Privacy & Consent Guide](TELEMETRY_PRIVACY_AND_CONSENT_GUIDE.md) |
+| Telemetry & Privacy | Consent-aware telemetry harness, facade helpers for provider registration, audit logging, request middleware, and compliance vault exports. | `src/product/ProductTelemetryHarness.js`, `src/product/telemetry/*`, `src/product/telemetry/createTelemetryFacade.js`, `types/product/telemetry/createTelemetryFacade.d.ts` | [Telemetry Privacy & Consent Guide](TELEMETRY_PRIVACY_AND_CONSENT_GUIDE.md) |
 | Licensing & Attestation | License manager, remote attestors, attestation profile registry/catalog, and commercialization gating. | `src/product/licensing/LicenseManager.js`, `src/product/licensing/RemoteLicenseAttestor.js`, `src/product/licensing/LicenseAttestationProfileRegistry.js`, `src/product/licensing/LicenseAttestationProfileCatalog.js` | [SDK Boundary Proposal](SDK_BOUNDARY_PROPOSAL.md), [License Attestation Profile Catalog](LICENSE_ATTESTATION_PROFILE_CATALOG.md) |
 | Commercialization Analytics | KPI snapshot store, reporter, and export flows with remote persistence adapters. | `src/product/licensing/LicenseCommercializationSnapshotStore.js`, `src/product/licensing/LicenseCommercializationReporter.js`, `src/product/licensing/storage/CommercializationSnapshotStorageAdapters.js` | [License Commercialization Analytics Bridge](LICENSE_COMMERCIALIZATION_ANALYTICS.md) |
 | Consent Experience | Reusable consent UI componentry and SDK wiring for toggles, audit visibility, and downloadable vault logs. | `src/ui/components/ConsentPanel.js`, `wearable-designer.html` (demo wiring) | [Telemetry Privacy & Consent Guide](TELEMETRY_PRIVACY_AND_CONSENT_GUIDE.md) |
@@ -23,7 +23,8 @@ This guide consolidates everything a delivery or partner engineering team needs 
 The following steps must be completed before a new team assumes ownership or before distributing a partner preview build:
 
 1. **Environment Readiness**
-   - Run `npm install` and confirm `npm test` passes (Vitest suites).
+   - Run `pnpm install` and confirm `pnpm test` passes (Vitest suites).
+   - Execute `pnpm exec tsc --project tsconfig.types.json` to validate the published TypeScript boundary before shipping partner builds.
    - Optional: install Playwright browsers (`npx playwright install`) if e2e smoke specs are required.
    - Verify local HTTP server access (`python3 -m http.server 8080`) renders `wearable-designer.html` with no console errors.
 
@@ -32,9 +33,26 @@ The following steps must be completed before a new team assumes ownership or bef
    - Configure consent defaults through `createConsentPanel` options and confirm telemetry events are gated until consent toggles are enabled.
 
 3. **Telemetry Providers & Middleware**
-   - Register required providers (`ConsoleTelemetryProvider`, `HttpTelemetryProvider`, `PartnerTelemetryProvider`, `ComplianceVaultTelemetryProvider`).
-   - Attach middleware (e.g., `createRequestSigningMiddleware`) and remote storage adapters per deployment environment.
-   - Capture audit trails via `getTelemetryAuditTrail()` and remote vault exports.
+   - Register required providers (`ConsoleTelemetryProvider`, `HttpTelemetryProvider`, `PartnerTelemetryProvider`, `ComplianceVaultTelemetryProvider`) through the facade returned on `createAdaptiveSDK(...).telemetryControls` or by importing `createTelemetryFacade` directly.
+   - Attach middleware (e.g., `createRequestSigningMiddleware`) and remote storage adapters per deployment environment via the same facade.
+   - Capture audit trails with `telemetryControls.getAuditTrail()` and schedule commercialization snapshots with `telemetryControls.getCommercializationSummary()`.
+
+```ts
+import { createAdaptiveSDK } from 'vib34d-xr-quaternion-sdk';
+
+const consoleProvider = /* your TelemetryProvider implementation */ {};
+const createSigningMiddleware = () => /* request signing middleware */ ((next) => next);
+
+const sdk = createAdaptiveSDK({ telemetry: { defaultConsent: { analytics: false } } });
+
+sdk.telemetryControls
+  .registerTelemetryProvider(consoleProvider)
+  .registerTelemetryRequestMiddleware(createSigningMiddleware())
+  .updateConsent({ analytics: true });
+
+const auditTrail = sdk.telemetryControls.getAuditTrail();
+const commercialization = sdk.telemetryControls.getCommercializationSummary();
+```
 
 4. **Adaptive Layout & Projection Integration**
    - Choose default layout strategies/annotations and verify blueprint exports using `buildLayoutBlueprint()`.
@@ -78,8 +96,9 @@ The following steps must be completed before a new team assumes ownership or bef
 
 | Area | Primary Tests | Owner |
 |------|---------------|-------|
-| Unit Coverage | `npm test` (Vitest suites across layout, telemetry, licensing, projection, commercialization) | Core Team |
-| E2E Smoke | `npm run test:e2e:smoke` (consent & compliance Playwright spec) | Experience QA |
+| Unit Coverage | `pnpm test` (Vitest suites across layout, telemetry, licensing, projection, commercialization) | Core Team |
+| TypeScript Boundary | `pnpm exec tsc --project tsconfig.types.json` (verifies exported declarations & samples) | Core Team |
+| E2E Smoke | `pnpm run test:e2e:smoke` (consent & compliance Playwright spec) | Experience QA |
 | Manual Demo Validation | Execute `wearable-designer.html` walkthrough covering consent toggles, compliance exports, blueprint download, projection simulations, commercialization snapshots. | Product Ops |
 | Security Review | Apply encryption templates, verify request signing middleware, audit telemetry classifications. | Security Liaison |
 | Licensing Scenarios | Validate license activation/revocation flows via `RemoteLicenseAttestor` and catalog packs. | Monetization Lead |

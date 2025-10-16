@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "outDir": "./.types-tmp",
+    "paths": {
+      "vib34d-xr-quaternion-sdk": ["./types/adaptive-sdk.d.ts"],
+      "vib34d-xr-quaternion-sdk/*": ["./types/*"]
+    }
+  },
+  "include": ["tests/types/**/*.ts"]
+}

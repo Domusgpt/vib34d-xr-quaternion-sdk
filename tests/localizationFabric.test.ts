@@ -129,4 +129,88 @@ describe('Localization quaternion fabric', () => {
     });
     expect(fallback.confidence).toBeGreaterThan(0);
   });
+
+  it('suppresses low-confidence anchors until reliability improves', () => {
+    const now = () => 5000;
+    const bridge = new LocalizationBridge({ timeSource: now });
+    const router = new QuaternionFabricRouter({ historyLimit: 3, timeSource: now });
+
+    const stageSnapshot = bridge.ingest({
+      source: 'openxr-stage',
+      timestamp: 4800,
+      referenceSpace: 'local-floor',
+      stageTransform: {
+        orientation: { x: 0, y: 0, z: 0, w: 1 },
+        position: { x: 0, y: 1, z: 0 }
+      },
+      accuracy: 0.88,
+      mappingStatus: 'mapped',
+      trackingState: 'tracking',
+      drift: 0.04,
+    });
+
+    const degradedAnchor = bridge.ingest({
+      source: 'spatial-anchor',
+      timestamp: 4804,
+      referenceSpace: 'local-floor',
+      trackingState: 'limited',
+      accuracy: 0.12,
+      anchor: {
+        id: 'anchor-critical',
+        transform: {
+          orientation: { x: 0, y: 0, z: 0, w: 1 },
+          position: { x: 0.1, y: 0.8, z: -0.2 }
+        },
+        accuracy: 0.05,
+        reliability: 'low',
+      },
+      drift: 0.42,
+    });
+
+    expect(stageSnapshot).not.toBeNull();
+    expect(degradedAnchor).not.toBeNull();
+
+    const stageChannel = stageSnapshot ? router.ingest(stageSnapshot) : null;
+    const anchorChannel = degradedAnchor ? router.ingest(degradedAnchor) : null;
+
+    expect(stageChannel).not.toBeNull();
+    expect(anchorChannel).not.toBeNull();
+    expect(anchorChannel!.confidence).toBeLessThan(0.15);
+    expect(stageChannel!.confidence).toBeGreaterThan(anchorChannel!.confidence);
+
+    const degradedSummary = router.summarize();
+    expect(degradedSummary.overallConfidence).toBeGreaterThan(0);
+    expect(degradedSummary.overallConfidence).toBeLessThan(stageChannel!.confidence);
+    expect(degradedSummary.worstDrift).toBeGreaterThanOrEqual(anchorChannel!.drift);
+
+    const recoveredAnchor = bridge.ingest({
+      source: 'spatial-anchor',
+      timestamp: 4810,
+      referenceSpace: 'local-floor',
+      accuracy: 0.92,
+      anchor: {
+        id: 'anchor-critical',
+        transform: {
+          orientation: { x: 0, y: 0, z: 0, w: 1 },
+          position: { x: 0.08, y: 0.82, z: -0.18 }
+        },
+        accuracy: 0.95,
+        reliability: 'high',
+      },
+      drift: 0.11,
+    });
+
+    expect(recoveredAnchor).not.toBeNull();
+    const recoveredChannel = router.ingest(recoveredAnchor!);
+    expect(recoveredChannel.confidence).toBeGreaterThan(anchorChannel!.confidence);
+
+    const history = router.getChannel(recoveredChannel.key);
+    expect(history).not.toBeNull();
+    expect(history!.history.length).toBeGreaterThanOrEqual(2);
+    expect(history!.current.drift).toBeLessThan(anchorChannel!.current.drift);
+
+    const recoveredSummary = router.summarize();
+    expect(recoveredSummary.overallConfidence).toBeGreaterThan(degradedSummary.overallConfidence);
+    expect(recoveredSummary.worstDrift).toBeLessThanOrEqual(degradedSummary.worstDrift);
+  });
 });

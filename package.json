@@ -4,8 +4,12 @@
   "description": "4D Geometric Processing with XR Quaternion Integration - Advanced quaternion mathematics and spatial computing for OpenXR/WebXR",
   "type": "module",
   "main": "src/core/AdaptiveSDK.js",
+  "types": "./types/adaptive-sdk.d.ts",
   "exports": {
-    ".": "./src/core/AdaptiveSDK.js",
+    ".": {
+      "types": "./types/adaptive-sdk.d.ts",
+      "default": "./src/core/AdaptiveSDK.js"
+    },
     "./quaternion": "./src/ui/adaptive/renderers/ShaderQuaternionSynchronizer.js",
     "./sensors": "./src/ui/adaptive/SensoryInputBridge.js",
     "./polychora": "./src/core/PolychoraSystem.js",
@@ -26,9 +30,17 @@
       "types": "./src/ui/adaptive/renderers/webgpu/index.ts",
       "default": "./src/ui/adaptive/renderers/webgpu/index.ts"
     },
+    "./ui/adaptive/renderers/pose-registry": {
+      "types": "./src/ui/adaptive/renderers/QuaternionPoseRegistrySynchronizer.ts",
+      "default": "./src/ui/adaptive/renderers/QuaternionPoseRegistrySynchronizer.ts"
+    },
     "./ui/adaptive/localization": {
       "types": "./src/ui/adaptive/localization/index.ts",
       "default": "./src/ui/adaptive/localization/index.ts"
+    },
+    "./product/telemetry/facade": {
+      "types": "./types/product/telemetry/createTelemetryFacade.d.ts",
+      "default": "./src/product/telemetry/createTelemetryFacade.js"
     }
   },
   "keywords": [
@@ -72,6 +84,7 @@
   "packageManager": "pnpm@9.4.0",
   "files": [
     "src/",
+    "types/",
     "DOCS/",
     "README.md"
   ],
