@@ -39,6 +39,16 @@ const toQuaternionTuple = quaternion => {
         return identityQuaternionTuple();
     }
 
+    if (Array.isArray(quaternion) || ArrayBuffer.isView(quaternion)) {
+        const view = quaternion;
+        const x = Number(view[0]) || 0;
+        const y = Number(view[1]) || 0;
+        const z = Number(view[2]) || 0;
+        const w = Number(view[3]);
+        const inferredW = Number.isFinite(w) ? w : Math.sqrt(Math.max(0, 1 - (x * x + y * y + z * z)));
+        return [x, y, z, inferredW];
+    }
+
     const x = Number(quaternion.x) || 0;
     const y = Number(quaternion.y) || 0;
     const z = Number(quaternion.z) || 0;
@@ -150,6 +160,47 @@ export class ShaderQuaternionSynchronizer {
             });
             this.subscriptions.push(unsubscribe);
         });
+        return this;
+    }
+
+    /**
+     * Allows external pose registries to push normalized quaternions directly into the
+     * synchronizer without routing through the SensoryInputBridge event bus.
+     *
+     * @param {import('../../../core/quaternion/index.ts').Quaternion | { x: number, y: number, z: number, w?: number }} quaternion
+     * @param {{ confidence?: number; timestamp?: number; source?: string }} [context]
+     * @returns {this}
+     */
+    ingestQuaternion(quaternion, context = {}) {
+        this.applyOrientation(quaternion, context);
+        return this;
+    }
+
+    /**
+     * Convenience helper for consuming pose samples originating from the shared
+     * QuaternionPoseRegistry. Samples expose both pose and frame timestamps so the
+     * synchronizer can compute angular velocity consistently with bridge-delivered events.
+     *
+     * @param {{ orientation?: any; poseTimestamp?: number; frameTimestamp?: number }} sample
+     * @param {{ confidence?: number; timestamp?: number; source?: string }} [context]
+     * @returns {this}
+     */
+    ingestPoseSample(sample, context = {}) {
+        if (!sample || !sample.orientation) {
+            return this;
+        }
+
+        const timestamp = typeof context.timestamp === 'number'
+            ? context.timestamp
+            : (typeof sample.frameTimestamp === 'number'
+                ? sample.frameTimestamp
+                : sample.poseTimestamp);
+
+        this.applyOrientation(sample.orientation, {
+            ...context,
+            timestamp
+        });
+
         return this;
     }
 
