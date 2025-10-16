@@ -3,6 +3,7 @@ import { SensoryInputBridge } from '../ui/adaptive/SensoryInputBridge.js';
 import { SpatialLayoutSynthesizer } from '../ui/adaptive/SpatialLayoutSynthesizer.js';
 import { DesignLanguageManager } from '../features/DesignLanguageManager.js';
 import { ProductTelemetryHarness } from '../product/ProductTelemetryHarness.js';
+import { createTelemetryFacade } from '../product/telemetry/createTelemetryFacade.js';
 import { buildLayoutBlueprint } from '../ui/adaptive/renderers/LayoutBlueprintRenderer.js';
 import { ProjectionFieldComposer } from '../ui/adaptive/renderers/ProjectionFieldComposer.js';
 import { ProjectionScenarioSimulator } from '../ui/adaptive/simulators/ProjectionScenarioSimulator.js';
@@ -19,10 +20,36 @@ export class AdaptiveInterfaceEngine extends VIB34DIntegratedEngine {
     constructor(options = {}) {
         super();
 
+        if (!this.variationManager || typeof this.variationManager.getVariationName !== 'function') {
+            this.variationManager = {
+                getVariationName: () => 'default'
+            };
+        }
+
+        if (!Number.isFinite(this.currentVariation)) {
+            this.currentVariation = 0;
+        }
+
         this.sensoryBridge = new SensoryInputBridge(options.sensory);
         this.layoutSynthesizer = new SpatialLayoutSynthesizer(options.layout);
         this.designLanguageManager = new DesignLanguageManager(this, options.design);
         this.telemetry = new ProductTelemetryHarness(options.telemetry);
+        this.telemetryFacade = createTelemetryFacade({
+            harness: this.telemetry,
+            owner: this,
+            hooks: {
+                onProviderRegistered: provider => {
+                    if (provider?.id) {
+                        this.telemetry.track('design.telemetry.provider_registered', { id: provider.id });
+                    }
+                },
+                onProviderRemoved: id => {
+                    if (id) {
+                        this.telemetry.track('design.telemetry.provider_removed', { id });
+                    }
+                }
+            }
+        });
         this.marketplaceHooks = options.marketplaceHooks || {};
         this.projectionComposer = new ProjectionFieldComposer(options.projection?.composer);
         this.projectionSimulator = new ProjectionScenarioSimulator({
@@ -97,83 +124,75 @@ export class AdaptiveInterfaceEngine extends VIB34DIntegratedEngine {
     }
 
     registerTelemetryProvider(provider) {
-        this.telemetry.registerProvider(provider);
-        this.telemetry.track('design.telemetry.provider_registered', { id: provider.id });
-        return this;
+        return this.telemetryFacade.registerProvider(provider);
     }
 
     registerTelemetryRequestMiddleware(middleware) {
-        this.telemetry.registerRequestMiddleware(middleware);
-        return this;
+        return this.telemetryFacade.registerRequestMiddleware(middleware);
     }
 
     clearTelemetryRequestMiddleware() {
-        this.telemetry.clearRequestMiddleware();
-        return this;
+        return this.telemetryFacade.clearRequestMiddleware();
     }
 
     registerLicenseAttestationProfile(profileOrId, maybeProfile) {
-        return this.telemetry.registerLicenseAttestationProfile(profileOrId, maybeProfile);
+        return this.telemetryFacade.registerLicenseAttestationProfile(profileOrId, maybeProfile);
     }
 
     registerLicenseAttestationProfilePack(packOrId, options = {}) {
-        return this.telemetry.registerLicenseAttestationProfilePack(packOrId, options);
+        return this.telemetryFacade.registerLicenseAttestationProfilePack(packOrId, options);
     }
 
     setDefaultLicenseAttestationProfile(id) {
-        this.telemetry.setDefaultLicenseAttestationProfile(id);
-        return this;
+        return this.telemetryFacade.setDefaultLicenseAttestationProfile(id);
     }
 
     applyLicenseAttestationProfile(id, overrides = {}) {
-        return this.telemetry.setLicenseAttestorFromProfile(id, overrides);
+        return this.telemetryFacade.setLicenseAttestorFromProfile(id, overrides);
     }
 
     removeTelemetryProvider(id) {
-        this.telemetry.removeProvider(id);
-        this.telemetry.track('design.telemetry.provider_removed', { id });
-        return this;
+        return this.telemetryFacade.removeProvider(id);
     }
 
     getTelemetryAuditTrail() {
-        return this.telemetry.getAuditTrail();
+        return this.telemetryFacade.getAuditTrail();
     }
 
     getLicenseCommercializationSummary() {
-        return this.telemetry.getCommercializationSummary();
+        return this.telemetryFacade.getCommercializationSummary();
     }
 
     getLicenseCommercializationReporter() {
-        return this.telemetry.getCommercializationReporter();
+        return this.telemetryFacade.getCommercializationReporter();
     }
 
     getLicenseCommercializationSnapshotStore() {
-        return this.telemetry.getCommercializationSnapshotStore();
+        return this.telemetryFacade.getCommercializationSnapshotStore();
     }
 
     captureLicenseCommercializationSnapshot(context = {}) {
-        return this.telemetry.captureCommercializationSnapshot(context);
+        return this.telemetryFacade.captureCommercializationSnapshot(context);
     }
 
     getLicenseCommercializationSnapshots(options = {}) {
-        return this.telemetry.getCommercializationSnapshots(options);
+        return this.telemetryFacade.getCommercializationSnapshots(options);
     }
 
     getLicenseCommercializationKpiReport(options = {}) {
-        return this.telemetry.getCommercializationKpiReport(options);
+        return this.telemetryFacade.getCommercializationKpiReport(options);
     }
 
     exportLicenseCommercializationSnapshots(options = {}) {
-        return this.telemetry.exportCommercializationSnapshots(options);
+        return this.telemetryFacade.exportCommercializationSnapshots(options);
     }
 
     startLicenseCommercializationSnapshotSchedule(intervalMs, context = {}) {
-        return this.telemetry.startCommercializationSnapshotSchedule(intervalMs, context);
+        return this.telemetryFacade.startCommercializationSnapshotSchedule(intervalMs, context);
     }
 
     stopLicenseCommercializationSnapshotSchedule() {
-        this.telemetry.stopCommercializationSnapshotSchedule();
-        return this;
+        return this.telemetryFacade.stopCommercializationSnapshotSchedule();
     }
 
     registerSensorAdapter(type, adapter, options = {}) {

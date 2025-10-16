@@ -1,4 +1,6 @@
 import { ConsoleTelemetryProvider } from './telemetry/ConsoleTelemetryProvider.js';
+import { TelemetryBatcher } from './telemetry/TelemetryBatcher.js';
+import { TelemetryProvider } from './telemetry/TelemetryProvider.js';
 import { LicenseAttestationProfileRegistry } from './licensing/LicenseAttestationProfileRegistry.js';
 import { resolveLicenseAttestationProfilePack } from './licensing/LicenseAttestationProfileCatalog.js';
 import { LicenseCommercializationReporter } from './licensing/LicenseCommercializationReporter.js';
@@ -15,6 +17,8 @@ const DEFAULT_CLASSIFICATION_RULES = [
     { prefix: 'privacy.', classification: 'compliance' },
     { prefix: 'biometric.', classification: 'biometric' }
 ];
+
+const BASE_DELIVER_BATCH = TelemetryProvider.prototype.deliverBatch;
 
 export class ProductTelemetryHarness {
     constructor(options = {}) {
@@ -108,6 +112,24 @@ export class ProductTelemetryHarness {
         this.providers = new Map();
 
         this.requestMiddleware = [];
+
+        const batchOptions = options.batch || {};
+        this.batchConfig = {
+            enabled: batchOptions.enabled !== false,
+            preferBatchedDelivery: batchOptions.preferBatchedDelivery !== false,
+            logger: batchOptions.logger || console
+        };
+
+        this.telemetryBatcher = this.batchConfig.enabled
+            ? new TelemetryBatcher({
+                maxBatchSize: batchOptions.maxSize,
+                maxBatchAgeMs: batchOptions.maxAgeMs,
+                maxBufferedEvents: batchOptions.maxBufferedEvents,
+                retryOnFailure: batchOptions.retryOnFailure,
+                logger: this.batchConfig.logger,
+                onFlush: (records, context) => this.deliverBatch(records, context)
+            })
+            : null;
 
         if (this.licenseManager) {
             this.attachLicenseFromManager(this.licenseManager.getLicense());
@@ -402,9 +424,91 @@ export class ProductTelemetryHarness {
         };
 
         this.buffer.push(record);
+        if (this.telemetryBatcher) {
+            this.telemetryBatcher.enqueue({ ...record }, { classification });
+        }
+
         for (const provider of this.providers.values()) {
+            const supportsBatch = this.supportsBatchedDelivery(provider);
+            if (this.batchConfig.preferBatchedDelivery && supportsBatch) {
+                continue;
+            }
             provider.track?.(event, record, { classification });
         }
+    }
+
+    async deliverBatch(records = [], context = {}) {
+        if (!Array.isArray(records) || records.length === 0) {
+            return { providers: 0, delivered: 0 };
+        }
+
+        const pending = [];
+        let delivered = 0;
+
+        for (const provider of this.providers.values()) {
+            const supportsBatch = this.supportsBatchedDelivery(provider);
+            if (supportsBatch) {
+                try {
+                    const result = provider.deliverBatch(records, context);
+                    if (result instanceof Promise) {
+                        pending.push(result);
+                    }
+                    delivered += records.length;
+                } catch (error) {
+                    this.recordAudit('design.telemetry.batch_error', {
+                        provider: provider.id,
+                        message: error?.message || 'Unknown error',
+                        reason: context.reason || 'batch-delivery'
+                    }, 'system');
+                }
+            } else if (!this.batchConfig.preferBatchedDelivery && typeof provider.track === 'function') {
+                for (const record of records) {
+                    provider.track(record.event, record, {
+                        classification: record.classification,
+                        batched: true,
+                        batchContext: context
+                    });
+                }
+                delivered += records.length;
+            }
+        }
+
+        if (pending.length) {
+            await Promise.allSettled(pending);
+        }
+
+        return {
+            providers: this.providers.size,
+            delivered
+        };
+    }
+
+    async flushBatches(options = {}) {
+        if (!this.telemetryBatcher) {
+            return {
+                batches: 0,
+                events: 0,
+                delivered: 0,
+                dropped: 0,
+                reason: options.reason || 'manual'
+            };
+        }
+
+        return this.telemetryBatcher.flush(options);
+    }
+
+    getTelemetryBatcher() {
+        return this.telemetryBatcher;
+    }
+
+    supportsBatchedDelivery(provider) {
+        if (!provider || typeof provider.deliverBatch !== 'function') {
+            return false;
+        }
+        if (provider.deliverBatch === BASE_DELIVER_BATCH) {
+            return false;
+        }
+        return true;
     }
 
     sanitizePayload(payload) {
@@ -671,6 +775,7 @@ export class ProductTelemetryHarness {
     start() {
         if (!this.enabled || this.flushHandle) return;
         this.flushHandle = setInterval(() => this.flush(), this.flushInterval);
+        this.telemetryBatcher?.start();
     }
 
     stop() {
@@ -678,6 +783,7 @@ export class ProductTelemetryHarness {
             clearInterval(this.flushHandle);
             this.flushHandle = null;
         }
+        this.telemetryBatcher?.stop();
         if (this.licenseManagerSubscription) {
             this.licenseManagerSubscription();
             this.licenseManagerSubscription = null;
@@ -692,8 +798,11 @@ export class ProductTelemetryHarness {
         }
     }
 
-    async flush() {
+    async flush(options = {}) {
         if (!this.enabled) return;
+        if (this.telemetryBatcher) {
+            await this.telemetryBatcher.flush({ reason: options.reason || 'manual' });
+        }
         const pending = [];
         for (const provider of this.providers.values()) {
             const result = provider.flush?.();
