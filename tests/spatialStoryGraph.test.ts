@@ -33,6 +33,7 @@ function makeChannel(drift: number, confidence: number): FabricChannelState {
     jitterMs: 0,
     confidence,
     drift,
+    recencyMs: 0,
   } satisfies FabricChannelState;
 }
 
