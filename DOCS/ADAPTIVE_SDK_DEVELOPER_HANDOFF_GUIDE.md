@@ -6,7 +6,7 @@ This guide consolidates everything a delivery or partner engineering team needs 
 
 | Domain | Purpose | Runtime Modules | Reference Docs |
 |--------|---------|-----------------|----------------|
-| Core Runtime & SDK | Adaptive orchestration for sensors, layout synthesis, projection, and commercialization features exposed via dependency-injected factory helpers. | `src/core/AdaptiveInterfaceEngine.js`, `src/core/AdaptiveSDK.js`, `types/adaptive-sdk.d.ts` | [Architecture Review](ADAPTIVE_ENGINE_ARCHITECTURE_REVIEW.md), [SDK Boundary Proposal](SDK_BOUNDARY_PROPOSAL.md) |
+| Core Runtime & SDK | Adaptive orchestration for sensors, layout synthesis, projection, commercialization features, the shared quaternion pose registry, and the optional pose reliability monitor surfaced via dependency-injected factory helpers. | `src/core/AdaptiveInterfaceEngine.js`, `src/core/AdaptiveSDK.js`, `types/adaptive-sdk.d.ts` | [Architecture Review](ADAPTIVE_ENGINE_ARCHITECTURE_REVIEW.md), [SDK Boundary Proposal](SDK_BOUNDARY_PROPOSAL.md) |
 | Sensory Normalization | Schema registration, sanitization, and lifecycle hooks for gaze, neural, biometric, ambient, and gesture inputs. | `src/ui/adaptive/SensoryInputBridge.js`, `src/ui/adaptive/sensors/SensorSchemaRegistry.js` | [Core Assessment](ADAPTIVE_ENGINE_CORE_ASSESSMENT.md) |
 | Layout & Blueprinting | Pluggable strategies, annotations, and blueprint rendering/export helpers for adaptive UI composition. | `src/ui/adaptive/SpatialLayoutSynthesizer.js`, `src/ui/adaptive/strategies/*`, `src/ui/adaptive/annotations/*`, `src/ui/adaptive/renderers/LayoutBlueprintRenderer.js` | [Layout & Telemetry Modularization Brief](LAYOUT_TELEMETRY_MODULARIZATION_BRIEF.md) |
 | Projection Stack | 4D projection field composition, simulation, cataloging, and validation for wearable-ready experiences. | `src/ui/adaptive/renderers/ProjectionFieldComposer.js`, `src/ui/adaptive/simulators/ProjectionScenarioSimulator.js`, `src/ui/adaptive/simulators/ProjectionScenarioCatalog.js`, `src/ui/adaptive/simulators/ProjectionScenarioValidator.js` | [Architecture Review](ADAPTIVE_ENGINE_ARCHITECTURE_REVIEW.md) |
@@ -32,23 +32,28 @@ The following steps must be completed before a new team assumes ownership or bef
    - Configure consent defaults through `createConsentPanel` options and confirm telemetry events are gated until consent toggles are enabled.
 
 3. **Telemetry Providers & Middleware**
-   - Register required providers (`ConsoleTelemetryProvider`, `HttpTelemetryProvider`, `PartnerTelemetryProvider`, `ComplianceVaultTelemetryProvider`).
-   - Attach middleware (e.g., `createRequestSigningMiddleware`) and remote storage adapters per deployment environment.
-   - Capture audit trails via `getTelemetryAuditTrail()` and remote vault exports.
+   - Instantiate the SDK and drive provider wiring through `sdk.telemetryControls` so registration, consent updates, and commercialization helpers remain chainable.【F:src/core/AdaptiveSDK.js†L182-L230】【F:src/product/telemetry/createTelemetryFacade.js†L61-L94】
+   - Register required providers (`ConsoleTelemetryProvider`, `HttpTelemetryProvider`, `PartnerTelemetryProvider`, `ComplianceVaultTelemetryProvider`) and chain middleware (e.g., `createRequestSigningMiddleware`) directly on the facade for consistent consent gating.【F:src/product/telemetry/createTelemetryFacade.js†L1-L94】
+   - Export commercialization snapshots and audit trails via the facade helpers (`getCommercializationSummary`, `getAuditTrail`, `exportConsentState`) before packaging partner builds.【F:src/product/telemetry/createTelemetryFacade.js†L14-L24】【F:types/adaptive-sdk.d.ts†L320-L420】
 
-4. **Adaptive Layout & Projection Integration**
+4. **Pose Registry & Quaternion Synchronizers**
+   - Confirm `sdk.poseRegistry` is populated by ingesting `spatial.pose-frame` payloads from the sensory bridge; validate headset/controller entries via `getDevice` snapshots before wiring shader synchronizers.【F:src/core/AdaptiveSDK.js†L9-L363】【F:tests/adaptiveSdk.poseRegistry.test.ts†L1-L78】
+- Instantiate registry synchronizers through `sdk.createQuaternionPoseRegistrySynchronizer` (optionally passing `synchronizerOptions`) so shader systems receive normalized quaternions from the shared registry.【F:types/adaptive-sdk.d.ts†L407-L560】【F:src/ui/adaptive/renderers/QuaternionPoseRegistrySynchronizer.ts†L1-L314】
+- Enable the pose reliability monitor (`sdk.poseReliabilityMonitor`) when telemetry insight is required; confirm degraded, stale, and lost device events hit telemetry pipelines by calling `evaluate()` or allowing the monitor to auto-run.【F:src/core/AdaptiveSDK.js†L9-L363】【F:src/ui/adaptive/renderers/PoseReliabilityMonitor.ts†L1-L260】【F:tests/poseReliabilityMonitor.test.ts†L1-L132】
+
+5. **Adaptive Layout & Projection Integration**
    - Choose default layout strategies/annotations and verify blueprint exports using `buildLayoutBlueprint()`.
    - Hydrate projection scenario catalog entries, validate them through the validator summaries, and simulate key scenarios in the projection composer.
 
-5. **Commercialization Analytics**
+6. **Commercialization Analytics**
    - Configure `LicenseCommercializationReporter` listeners, schedule snapshot captures, and connect remote storage adapters (`createSignedS3SnapshotAdapter`, etc.).
    - Export JSON/CSV snapshots and ensure KPI deltas populate commercialization dashboards in the demo shell.
 
-6. **Security & Compliance**
+7. **Security & Compliance**
    - Apply encryption templates from `REMOTE_STORAGE_ENCRYPTION_TEMPLATES.md` to remote storage adapters.
    - Document retention policies, data minimization settings, and consent audit expectations for each telemetry channel.
 
-7. **Documentation & Support Links**
+8. **Documentation & Support Links**
    - Review README updates, roadmap references, and ensure partner-facing materials include this guide plus SDK boundary documentation.
    - Update `PLANNING/SESSION_LOG.md` with ownership transition details and next steps.
 
