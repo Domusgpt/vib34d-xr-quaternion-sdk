@@ -122,6 +122,16 @@ export class ComplianceVaultTelemetryProvider extends TelemetryProvider {
         });
     }
 
+    deliverBatch(records = []) {
+        if (!Array.isArray(records) || records.length === 0) {
+            return;
+        }
+
+        for (const record of records) {
+            this.track(record.event, record, { classification: record.classification });
+        }
+    }
+
     recordAudit(entry) {
         if (!this.shouldCapture(entry?.classification)) {
             return;

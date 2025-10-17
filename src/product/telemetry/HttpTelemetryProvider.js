@@ -23,6 +23,22 @@ export class HttpTelemetryProvider extends TelemetryProvider {
         this.queue.push({ type: 'track', event, payload, timestamp: Date.now() });
     }
 
+    deliverBatch(records = [], context = {}) {
+        if (!Array.isArray(records) || records.length === 0) {
+            return;
+        }
+
+        const timestamp = Date.now();
+        for (const record of records) {
+            this.queue.push({
+                type: 'track',
+                event: record.event,
+                payload: { ...record, batchContext: context },
+                timestamp
+            });
+        }
+    }
+
     async flush() {
         if (!this.endpoint || this.queue.length === 0) {
             this.queue = [];

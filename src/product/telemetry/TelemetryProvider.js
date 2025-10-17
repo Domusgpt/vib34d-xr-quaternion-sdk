@@ -11,6 +11,8 @@ export class TelemetryProvider {
 
     track() {}
 
+    deliverBatch() {}
+
     flush() {}
 
     recordAudit() {}

@@ -1,4 +1,6 @@
 import { ConsoleTelemetryProvider } from './telemetry/ConsoleTelemetryProvider.js';
+import { TelemetryBatcher } from './telemetry/TelemetryBatcher.js';
+import { TelemetryProvider } from './telemetry/TelemetryProvider.js';
 import { LicenseAttestationProfileRegistry } from './licensing/LicenseAttestationProfileRegistry.js';
 import { resolveLicenseAttestationProfilePack } from './licensing/LicenseAttestationProfileCatalog.js';
 import { LicenseCommercializationReporter } from './licensing/LicenseCommercializationReporter.js';
@@ -15,6 +17,8 @@ const DEFAULT_CLASSIFICATION_RULES = [
     { prefix: 'privacy.', classification: 'compliance' },
     { prefix: 'biometric.', classification: 'biometric' }
 ];
+
+const BASE_DELIVER_BATCH = TelemetryProvider.prototype.deliverBatch;
 
 export class ProductTelemetryHarness {
     constructor(options = {}) {
@@ -108,6 +112,28 @@ export class ProductTelemetryHarness {
         this.providers = new Map();
 
         this.requestMiddleware = [];
+
+        const batchOptions = options.batch || {};
+        this.batchConfig = {
+            enabled: batchOptions.enabled !== false,
+            preferBatchedDelivery: batchOptions.preferBatchedDelivery !== false,
+            logger: batchOptions.logger || console
+        };
+
+        this.batchAutoFlushConfig = this.normalizeBatchAutoFlush(batchOptions.autoFlush);
+        this.batchAutoFlushTeardown = [];
+        this.batchAutoFlushIntervalHandle = null;
+
+        this.telemetryBatcher = this.batchConfig.enabled
+            ? new TelemetryBatcher({
+                maxBatchSize: batchOptions.maxSize,
+                maxBatchAgeMs: batchOptions.maxAgeMs,
+                maxBufferedEvents: batchOptions.maxBufferedEvents,
+                retryOnFailure: batchOptions.retryOnFailure,
+                logger: this.batchConfig.logger,
+                onFlush: (records, context) => this.deliverBatch(records, context)
+            })
+            : null;
 
         if (this.licenseManager) {
             this.attachLicenseFromManager(this.licenseManager.getLicense());
@@ -210,6 +236,156 @@ export class ProductTelemetryHarness {
         for (const provider of this.providers.values()) {
             if (typeof provider.clearRequestMiddleware === 'function') {
                 provider.clearRequestMiddleware();
+            }
+        }
+    }
+
+    normalizeBatchAutoFlush(autoFlush) {
+        if (!this.batchConfig.enabled || autoFlush === false) {
+            return null;
+        }
+
+        const defaults = {
+            visibilityChange: true,
+            pageHide: true,
+            beforeUnload: true,
+            freeze: false,
+            flushHiddenOnly: true,
+            intervalMs: null,
+            custom: [],
+            reasons: {
+                visibilityChange: 'visibility-change',
+                pageHide: 'page-hide',
+                beforeUnload: 'before-unload',
+                freeze: 'page-freeze',
+                interval: 'auto-flush-interval'
+            }
+        };
+
+        if (autoFlush === undefined || autoFlush === true) {
+            return {
+                ...defaults,
+                reasons: { ...defaults.reasons },
+                custom: []
+            };
+        }
+
+        if (typeof autoFlush !== 'object') {
+            return {
+                ...defaults,
+                reasons: { ...defaults.reasons },
+                custom: []
+            };
+        }
+
+        const normalized = {
+            visibilityChange: autoFlush.visibilityChange !== false,
+            pageHide: autoFlush.pageHide !== false,
+            beforeUnload: autoFlush.beforeUnload !== false,
+            freeze: autoFlush.freeze === true,
+            flushHiddenOnly: autoFlush.flushHiddenOnly !== false,
+            intervalMs: Number.isFinite(autoFlush.intervalMs) && autoFlush.intervalMs > 0
+                ? Math.floor(autoFlush.intervalMs)
+                : null,
+            custom: Array.isArray(autoFlush.custom)
+                ? autoFlush.custom.filter(fn => typeof fn === 'function')
+                : [],
+            reasons: { ...defaults.reasons, ...(autoFlush.reasons || {}) }
+        };
+
+        return normalized;
+    }
+
+    enableBatchAutoFlush() {
+        if (!this.batchAutoFlushConfig || this.batchAutoFlushTeardown.length > 0) {
+            return;
+        }
+
+        const config = this.batchAutoFlushConfig;
+        const teardown = [];
+        const logger = this.batchConfig.logger;
+
+        const flushWithReason = (reasonKey, overrideReason) => {
+            const reason = overrideReason || config.reasons?.[reasonKey] || reasonKey || 'auto-flush';
+            const result = this.flushBatches({ reason });
+            if (result && typeof result.catch === 'function') {
+                result.catch(error => {
+                    logger?.error?.('[ProductTelemetryHarness] Auto-flush failed', { reason, error });
+                });
+            }
+            return result;
+        };
+
+        const addListener = (target, type, handler, options) => {
+            if (!target || typeof target.addEventListener !== 'function' || typeof target.removeEventListener !== 'function') {
+                return;
+            }
+            target.addEventListener(type, handler, options);
+            teardown.push(() => {
+                try {
+                    target.removeEventListener(type, handler, options);
+                } catch (error) {
+                    logger?.warn?.('[ProductTelemetryHarness] Failed to detach auto-flush listener', { type, error });
+                }
+            });
+        };
+
+        if (config.visibilityChange && typeof document !== 'undefined' && document?.addEventListener) {
+            const onVisibilityChange = () => {
+                if (config.flushHiddenOnly && typeof document.visibilityState === 'string' && document.visibilityState !== 'hidden') {
+                    return;
+                }
+                flushWithReason('visibilityChange');
+            };
+            addListener(document, 'visibilitychange', onVisibilityChange, { passive: true });
+        }
+
+        if (config.pageHide && typeof window !== 'undefined' && window?.addEventListener) {
+            const onPageHide = () => flushWithReason('pageHide');
+            addListener(window, 'pagehide', onPageHide, { passive: true });
+        }
+
+        if (config.beforeUnload && typeof window !== 'undefined' && window?.addEventListener) {
+            const onBeforeUnload = () => flushWithReason('beforeUnload');
+            addListener(window, 'beforeunload', onBeforeUnload, { passive: true });
+        }
+
+        if (config.freeze && typeof document !== 'undefined' && document?.addEventListener) {
+            const onFreeze = () => flushWithReason('freeze');
+            addListener(document, 'freeze', onFreeze, { passive: true });
+        }
+
+        for (const register of config.custom) {
+            try {
+                const maybeTeardown = register(reason => flushWithReason('custom', reason));
+                if (typeof maybeTeardown === 'function') {
+                    teardown.push(maybeTeardown);
+                }
+            } catch (error) {
+                logger?.warn?.('[ProductTelemetryHarness] Failed to register custom auto-flush trigger', error);
+            }
+        }
+
+        if (config.intervalMs) {
+            this.batchAutoFlushIntervalHandle = setInterval(() => flushWithReason('interval'), config.intervalMs);
+        }
+
+        this.batchAutoFlushTeardown = teardown;
+    }
+
+    disableBatchAutoFlush() {
+        if (this.batchAutoFlushIntervalHandle) {
+            clearInterval(this.batchAutoFlushIntervalHandle);
+            this.batchAutoFlushIntervalHandle = null;
+        }
+        if (this.batchAutoFlushTeardown.length) {
+            const disposals = this.batchAutoFlushTeardown.splice(0);
+            for (const dispose of disposals) {
+                try {
+                    dispose();
+                } catch (error) {
+                    this.batchConfig.logger?.warn?.('[ProductTelemetryHarness] Failed to clean up auto-flush trigger', error);
+                }
             }
         }
     }
@@ -402,9 +578,91 @@ export class ProductTelemetryHarness {
         };
 
         this.buffer.push(record);
+        if (this.telemetryBatcher) {
+            this.telemetryBatcher.enqueue({ ...record }, { classification });
+        }
+
         for (const provider of this.providers.values()) {
+            const supportsBatch = this.supportsBatchedDelivery(provider);
+            if (this.batchConfig.preferBatchedDelivery && supportsBatch) {
+                continue;
+            }
             provider.track?.(event, record, { classification });
         }
+    }
+
+    async deliverBatch(records = [], context = {}) {
+        if (!Array.isArray(records) || records.length === 0) {
+            return { providers: 0, delivered: 0 };
+        }
+
+        const pending = [];
+        let delivered = 0;
+
+        for (const provider of this.providers.values()) {
+            const supportsBatch = this.supportsBatchedDelivery(provider);
+            if (supportsBatch) {
+                try {
+                    const result = provider.deliverBatch(records, context);
+                    if (result instanceof Promise) {
+                        pending.push(result);
+                    }
+                    delivered += records.length;
+                } catch (error) {
+                    this.recordAudit('design.telemetry.batch_error', {
+                        provider: provider.id,
+                        message: error?.message || 'Unknown error',
+                        reason: context.reason || 'batch-delivery'
+                    }, 'system');
+                }
+            } else if (!this.batchConfig.preferBatchedDelivery && typeof provider.track === 'function') {
+                for (const record of records) {
+                    provider.track(record.event, record, {
+                        classification: record.classification,
+                        batched: true,
+                        batchContext: context
+                    });
+                }
+                delivered += records.length;
+            }
+        }
+
+        if (pending.length) {
+            await Promise.allSettled(pending);
+        }
+
+        return {
+            providers: this.providers.size,
+            delivered
+        };
+    }
+
+    async flushBatches(options = {}) {
+        if (!this.telemetryBatcher) {
+            return {
+                batches: 0,
+                events: 0,
+                delivered: 0,
+                dropped: 0,
+                reason: options.reason || 'manual'
+            };
+        }
+
+        return this.telemetryBatcher.flush(options);
+    }
+
+    getTelemetryBatcher() {
+        return this.telemetryBatcher;
+    }
+
+    supportsBatchedDelivery(provider) {
+        if (!provider || typeof provider.deliverBatch !== 'function') {
+            return false;
+        }
+        if (provider.deliverBatch === BASE_DELIVER_BATCH) {
+            return false;
+        }
+        return true;
     }
 
     sanitizePayload(payload) {
@@ -671,6 +929,8 @@ export class ProductTelemetryHarness {
     start() {
         if (!this.enabled || this.flushHandle) return;
         this.flushHandle = setInterval(() => this.flush(), this.flushInterval);
+        this.telemetryBatcher?.start();
+        this.enableBatchAutoFlush();
     }
 
     stop() {
@@ -678,6 +938,8 @@ export class ProductTelemetryHarness {
             clearInterval(this.flushHandle);
             this.flushHandle = null;
         }
+        this.telemetryBatcher?.stop();
+        this.disableBatchAutoFlush();
         if (this.licenseManagerSubscription) {
             this.licenseManagerSubscription();
             this.licenseManagerSubscription = null;
@@ -692,8 +954,11 @@ export class ProductTelemetryHarness {
         }
     }
 
-    async flush() {
+    async flush(options = {}) {
         if (!this.enabled) return;
+        if (this.telemetryBatcher) {
+            await this.telemetryBatcher.flush({ reason: options.reason || 'manual' });
+        }
         const pending = [];
         for (const provider of this.providers.values()) {
             const result = provider.flush?.();

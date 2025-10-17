@@ -24,6 +24,25 @@ export class ConsoleTelemetryProvider extends TelemetryProvider {
         }
     }
 
+    deliverBatch(records = [], context = {}) {
+        if (!Array.isArray(records) || records.length === 0) {
+            return;
+        }
+
+        for (const record of records) {
+            const entry = {
+                event: record.event,
+                payload: record,
+                timestamp: Date.now(),
+                context
+            };
+            this.events.push(entry);
+            if (this.log) {
+                console.info('[ConsoleTelemetryProvider] batch', entry);
+            }
+        }
+    }
+
     flush() {
         if (this.log && this.events.length) {
             console.table(this.events);
