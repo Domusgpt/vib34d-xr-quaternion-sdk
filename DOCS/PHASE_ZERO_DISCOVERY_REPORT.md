@@ -21,20 +21,20 @@ Phase 0 of the localization quaternion development track is now complete. This r
 
 | Module | Responsibilities | Phase 0 Findings |
 | --- | --- | --- |
-| `AdaptiveInterfaceEngine` | Composes sensory, layout, design, telemetry, and projection services while providing rich registration APIs for sensor schemas, adapters, and telemetry providers. | Telemetry wrapper methods duplicate parameter forwarding patterns; candidate for utility extraction during Phase 1. Depends on `SensoryInputBridge`, `SpatialLayoutSynthesizer`, `ProductTelemetryHarness`, and projection simulators. |
+| `AdaptiveInterfaceEngine` | Composes sensory, layout, design, telemetry, and projection services while providing rich registration APIs for sensor schemas, adapters, and telemetry providers. | Telemetry wrapper duplication has since been extracted into a reusable facade, reducing boilerplate while preserving instrumentation hooks. Depends on `SensoryInputBridge`, `SpatialLayoutSynthesizer`, `ProductTelemetryHarness`, and projection simulators.【F:src/product/telemetry/createTelemetryFacade.js†L1-L120】 |
 | `ShaderQuaternionSynchronizer` | Normalizes localization quaternions, derives Euler angles, and pushes motion-weighted parameters into visualization systems. | Shares parameter lerp logic that can be centralized with upcoming quaternion core utilities. Emits to quantum, holographic, and faceted systems with base-parameter caching. |
-| `SensoryInputBridge` | Manages sensor adapters, schema validation, history, and semantic channel emission for XR input streams. | Provides schema-backed ingestion for `spatial.pose` data leveraged by the preview harness; history trimming thresholds configurable for future rotor caching experiments. |
+| `SensoryInputBridge` | Manages sensor adapters, schema validation, history, and semantic channel emission for XR input streams. | Provides schema-backed ingestion for `spatial.pose` and `spatial.pose-frame` channels leveraged by the preview harness; history trimming thresholds configurable for future rotor caching experiments and now feed the shared quaternion pose registry. |
 
 ## Identified Consolidation Targets
 
-1. **Telemetry registration wrappers** — `AdaptiveInterfaceEngine` hosts numerous pass-through methods (`registerTelemetryProvider`, `removeTelemetryProvider`, etc.). Extracting a shared mixin or decorator during Phase 1 would reduce boilerplate while improving typing cohesion.
+1. **Telemetry registration wrappers** — ✅ Addressed via the shared telemetry facade that now powers `AdaptiveInterfaceEngine` and the SDK surface, eliminating pass-through boilerplate while preserving partner ergonomics.【F:src/core/AdaptiveInterfaceEngine.js†L18-L120】【F:src/product/telemetry/createTelemetryFacade.js†L1-L120】
 2. **Quaternion lerp utilities** — The synchronizer internally implements quaternion multiply, conjugate, and lerp helpers. These should migrate into the shared math core outlined for Phase 1 to guarantee reuse across Unity and native bindings.
 3. **Sensor schema issue routing** — `SensoryInputBridge` maintains a validation log and reporter hook; Phase 1 can expose this via structured events so telemetry providers avoid duplicate console warnings.
 
 ## Recommended Next Steps
 
 - Begin Phase 1 by lifting `ShaderQuaternionSynchronizer` math helpers into `src/core/quaternion/` as pure functions with Vitest coverage.
-- Align telemetry wrapper extraction with the planned quaternion registry so license/commercialization reporting aligns with localization provenance tags.
+- ✅ Telemetry wrapper extraction now aligns with the shared quaternion registry so license/commercialization reporting flows through consistent provenance tags, and `createAdaptiveSDK` exposes a default pose registry wired to sensory channels for downstream shader synchronizers.【F:src/product/telemetry/createTelemetryFacade.js†L1-L120】【F:src/core/AdaptiveSDK.js†L9-L363】【F:src/ui/adaptive/renderers/QuaternionPoseRegistrySynchronizer.ts†L1-L314】
 - Expand Storybook stories with mocked localization failure scenarios once the localization fabric modules land in later phases.
 
 Phase 0 deliverables unlock iterative quaternion fabric work with consistent tooling across Vite, Storybook, and pnpm-based automation.
