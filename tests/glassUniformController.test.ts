@@ -131,6 +131,11 @@ describe('GlassUniformController', () => {
       drift: 0.55
     });
 
+    const telemetry = controller.getLocalizationTelemetry();
+    expect(telemetry.snapshot).not.toBeNull();
+    expect(telemetry.channel).not.toBeNull();
+    expect(controller.getLastLocalizationSnapshot()).toBe(telemetry.snapshot);
+
     const risks = controller.listLocalizationRisks();
     expect(risks.some(risk => risk.toLowerCase().includes('latency'))).toBe(true);
   });

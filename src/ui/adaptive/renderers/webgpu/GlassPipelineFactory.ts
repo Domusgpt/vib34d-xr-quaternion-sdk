@@ -11,6 +11,28 @@ import {
 } from './GPUInterfaces.ts';
 import type { GPUBufferLike } from './TripleBufferedUniform.ts';
 
+const shaderModuleCache = new WeakMap<GPUDeviceRaw, Map<string, unknown>>();
+
+function getCachedShaderModule(device: GPUDeviceRaw, code: string, label: string): unknown {
+  let cache = shaderModuleCache.get(device);
+  if (!cache) {
+    cache = new Map();
+    shaderModuleCache.set(device, cache);
+  }
+
+  const existing = cache.get(code);
+  if (existing) {
+    return existing;
+  }
+
+  const module = device.createShaderModule({
+    label,
+    code,
+  });
+  cache.set(code, module);
+  return module;
+}
+
 export interface GlassPipelineResources {
   readonly uniformBindGroupLayout: unknown;
   readonly layerBindGroupLayout: unknown;
@@ -169,16 +191,10 @@ export function createGlassPipelines(options: GlassPipelineFactoryOptions): Glas
   });
 
   const layerShaderModules = shaderCodes.map((code, index) =>
-    device.createShaderModule({
-      label: `${layers[index]?.pipelineLabel ?? `GlassLayer${index}`}-Shader`,
-      code,
-    })
+    getCachedShaderModule(device, code, `${layers[index]?.pipelineLabel ?? `GlassLayer${index}`}-Shader`)
   );
 
-  const compositeShaderModule = device.createShaderModule({
-    label: 'CompositeShader',
-    code: buildCompositeShader(layers.length)
-  });
+  const compositeShaderModule = getCachedShaderModule(device, buildCompositeShader(layers.length), 'CompositeShader');
 
   const layerPipelineLayout = device.createPipelineLayout({
     bindGroupLayouts: [uniformBindGroupLayout, layerBindGroupLayout]

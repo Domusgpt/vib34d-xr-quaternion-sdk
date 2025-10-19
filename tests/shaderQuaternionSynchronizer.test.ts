@@ -39,8 +39,17 @@ class MockSystem {
 describe('ShaderQuaternionSynchronizer', () => {
   it('routes normalized pose quaternions into shader parameters using shared math', () => {
     const bridge = new MockBridge();
-    const quantum = new MockSystem({ rot4dXW: 0, rot4dYW: 0, rot4dZW: 0, chaos: 0.2, intensity: 0.7 });
-    const holographic = new MockSystem({ hue: 320, saturation: 0.9 });
+    const quantum = new MockSystem({
+      rot4dXY: 0,
+      rot4dXZ: 0,
+      rot4dYZ: 0,
+      rot4dXW: 0,
+      rot4dYW: 0,
+      rot4dZW: 0,
+      chaos: 0.2,
+      intensity: 0.7,
+    });
+    const holographic = new MockSystem({ hue: 320, saturation: 0.9, rot4dXY: 0, rot4dXZ: 0, rot4dYZ: 0, rot4dXW: 0 });
     const faceted = new MockSystem({ speed: 1 });
 
     const synchronizer = new ShaderQuaternionSynchronizer({
@@ -70,6 +79,7 @@ describe('ShaderQuaternionSynchronizer', () => {
     });
 
     expect(quantum.getParameter('rot4dXW')).toBeCloseTo(Math.PI / 2, 3);
+    expect(Math.abs(quantum.getParameter('rot4dXY')) + Math.abs(quantum.getParameter('rot4dXZ')) + Math.abs(quantum.getParameter('rot4dYZ'))).toBeGreaterThan(0);
     expect(quantum.getParameter('chaos')).toBeGreaterThan(0.5);
     expect(holographic.getParameter('hue')).toBeGreaterThanOrEqual(320);
     expect(faceted.getParameter('speed')).toBeGreaterThan(1);
@@ -79,8 +89,8 @@ describe('ShaderQuaternionSynchronizer', () => {
 
   it('limits the active target list to a single system by default', () => {
     const bridge = new MockBridge();
-    const quantum = new MockSystem({ rot4dXW: 0 });
-    const holographic = new MockSystem({ rot4dXW: 0 });
+    const quantum = new MockSystem({ rot4dXY: 0, rot4dXZ: 0, rot4dYZ: 0, rot4dXW: 0 });
+    const holographic = new MockSystem({ rot4dXY: 0, rot4dXZ: 0, rot4dYZ: 0, rot4dXW: 0 });
     const faceted = new MockSystem({ speed: 1 });
 
     const synchronizer = new ShaderQuaternionSynchronizer({
@@ -110,8 +120,8 @@ describe('ShaderQuaternionSynchronizer', () => {
 
   it('supports restricting updates to a specific target system', () => {
     const bridge = new MockBridge();
-    const quantum = new MockSystem({ rot4dXW: 0 });
-    const holographic = new MockSystem({ rot4dXW: 0 });
+    const quantum = new MockSystem({ rot4dXY: 0, rot4dXZ: 0, rot4dYZ: 0, rot4dXW: 0 });
+    const holographic = new MockSystem({ rot4dXY: 0, rot4dXZ: 0, rot4dYZ: 0, rot4dXW: 0 });
 
     const synchronizer = new ShaderQuaternionSynchronizer({
       bridge,
@@ -140,8 +150,8 @@ describe('ShaderQuaternionSynchronizer', () => {
 
   it('reacts to system activation events to enforce exclusive targets', () => {
     const bridge = new MockBridge();
-    const quantum = new MockSystem({ rot4dXW: 0 });
-    const holographic = new MockSystem({ rot4dXW: 0 });
+    const quantum = new MockSystem({ rot4dXY: 0, rot4dXZ: 0, rot4dYZ: 0, rot4dXW: 0 });
+    const holographic = new MockSystem({ rot4dXY: 0, rot4dXZ: 0, rot4dYZ: 0, rot4dXW: 0 });
 
     const activationBus = new EventTarget();
 
