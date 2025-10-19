@@ -63,6 +63,9 @@ export class QuantumHolographicVisualizer {
             intensity: 0.5,
             saturation: 0.8,
             dimension: 3.5,
+            rot4dXY: 0.0,
+            rot4dXZ: 0.0,
+            rot4dYZ: 0.0,
             rot4dXW: 0.0,
             rot4dYW: 0.0,
             rot4dZW: 0.0
@@ -243,6 +246,9 @@ uniform float u_hue;
 uniform float u_intensity;
 uniform float u_saturation;
 uniform float u_dimension;
+uniform float u_rot4dXY;
+uniform float u_rot4dXZ;
+uniform float u_rot4dYZ;
 uniform float u_rot4dXW;
 uniform float u_rot4dYW;
 uniform float u_rot4dZW;
@@ -251,6 +257,39 @@ uniform float u_clickIntensity;
 uniform float u_roleIntensity;
 
 // 4D rotation matrices
+mat4 rotateXY(float theta) {
+    float c = cos(theta);
+    float s = sin(theta);
+    return mat4(
+        c, -s, 0.0, 0.0,
+        s,  c, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0, 1.0
+    );
+}
+
+mat4 rotateXZ(float theta) {
+    float c = cos(theta);
+    float s = sin(theta);
+    return mat4(
+        c, 0.0, -s, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        s, 0.0,  c, 0.0,
+        0.0, 0.0, 0.0, 1.0
+    );
+}
+
+mat4 rotateYZ(float theta) {
+    float c = cos(theta);
+    float s = sin(theta);
+    return mat4(
+        1.0, 0.0, 0.0, 0.0,
+        0.0,  c, -s, 0.0,
+        0.0,  s,  c, 0.0,
+        0.0, 0.0, 0.0, 1.0
+    );
+}
+
 mat4 rotateXW(float theta) {
     float c = cos(theta);
     float s = sin(theta);
@@ -522,6 +561,9 @@ void main() {
     pos.xy += (u_mouse - 0.5) * u_mouseIntensity * 2.0;
     
     // Apply 4D rotations
+    pos = rotateXY(u_rot4dXY) * pos;
+    pos = rotateXZ(u_rot4dXZ) * pos;
+    pos = rotateYZ(u_rot4dYZ) * pos;
     pos = rotateXW(u_rot4dXW) * pos;
     pos = rotateYW(u_rot4dYW) * pos;
     pos = rotateZW(u_rot4dZW) * pos;
@@ -653,6 +695,9 @@ void main() {
             intensity: this.gl.getUniformLocation(this.program, 'u_intensity'),
             saturation: this.gl.getUniformLocation(this.program, 'u_saturation'),
             dimension: this.gl.getUniformLocation(this.program, 'u_dimension'),
+            rot4dXY: this.gl.getUniformLocation(this.program, 'u_rot4dXY'),
+            rot4dXZ: this.gl.getUniformLocation(this.program, 'u_rot4dXZ'),
+            rot4dYZ: this.gl.getUniformLocation(this.program, 'u_rot4dYZ'),
             rot4dXW: this.gl.getUniformLocation(this.program, 'u_rot4dXW'),
             rot4dYW: this.gl.getUniformLocation(this.program, 'u_rot4dYW'),
             rot4dZW: this.gl.getUniformLocation(this.program, 'u_rot4dZW'),
@@ -919,6 +964,9 @@ void main() {
         this.gl.uniform1f(this.uniforms.intensity, this.params.intensity);
         this.gl.uniform1f(this.uniforms.saturation, this.params.saturation);
         this.gl.uniform1f(this.uniforms.dimension, this.params.dimension);
+        this.gl.uniform1f(this.uniforms.rot4dXY, this.params.rot4dXY);
+        this.gl.uniform1f(this.uniforms.rot4dXZ, this.params.rot4dXZ);
+        this.gl.uniform1f(this.uniforms.rot4dYZ, this.params.rot4dYZ);
         this.gl.uniform1f(this.uniforms.rot4dXW, this.params.rot4dXW);
         this.gl.uniform1f(this.uniforms.rot4dYW, this.params.rot4dYW);
         this.gl.uniform1f(this.uniforms.rot4dZW, this.params.rot4dZW);

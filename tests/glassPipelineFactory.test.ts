@@ -109,4 +109,41 @@ describe('createGlassPipelines', () => {
     const layerPipelineRecords = device.pipelineRecords.filter(record => record.label?.includes('Layer'));
     expect(layerPipelineRecords).toHaveLength(2);
   });
+
+  it('reuses cached pipelines for identical device configurations', () => {
+    const device = createMockDevice();
+    const layers = [
+      {
+        name: 'Sphere',
+        pipelineLabel: 'LayerSphere',
+        shader: { geometry: 'hypersphere' as const, projection: 'perspective' as const },
+      },
+    ];
+
+    const composer = new MultiLayerGlassComposer({
+      device: device as unknown as GPUDeviceRaw,
+      layers,
+      target: { width: 640, height: 360, format: 'rgba16float' },
+      uniformSize: WebXRQuaternionBridge.uniformByteSize,
+    });
+
+    const first = createGlassPipelines({
+      device: device as unknown as GPUDeviceRaw,
+      composer,
+      layers,
+      outputFormat: 'bgra8unorm',
+    });
+
+    const recordedPipelines = device.pipelineRecords.length;
+
+    const second = createGlassPipelines({
+      device: device as unknown as GPUDeviceRaw,
+      composer,
+      layers,
+      outputFormat: 'bgra8unorm',
+    });
+
+    expect(second).toBe(first);
+    expect(device.pipelineRecords.length).toBe(recordedPipelines);
+  });
 });

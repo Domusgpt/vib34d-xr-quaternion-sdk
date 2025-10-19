@@ -7,6 +7,16 @@ export class CanvasManager {
   constructor() {
     this.currentSystem = null;
     this.currentEngine = null;
+    this.currentRotor = {
+      xy: 0,
+      xz: 0,
+      yz: 0,
+      xw: 0,
+      yw: 0,
+      zw: 0
+    };
+    this.quaternionHandlers = new Map();
+    this.lifecycleHandlers = new Map();
     this.boundResizeHandler = null;
     this.resizeEventOptions = { passive: true };
 
@@ -19,7 +29,189 @@ export class CanvasManager {
       } catch (error) {
         console.warn('⚠️ Failed to attach orientationchange listener', error);
       }
+
+      // Expose the manager globally so preview tooling and synchronizers can
+      // deliver shared quaternion updates without needing tight coupling.
+      if (!window.canvasManager) {
+        window.canvasManager = this;
+      }
     }
+  }
+
+  registerQuaternionHandler(systemName, handler) {
+    if (!systemName || typeof handler !== 'function') {
+      return () => {};
+    }
+
+    const normalizedName = String(systemName).trim();
+    this.quaternionHandlers.set(normalizedName, handler);
+
+    // Immediately hydrate the handler with any stored rotor so newly
+    // constructed engines render with the correct quaternion state.
+    handler({ ...this.currentRotor });
+
+    return () => {
+      this.quaternionHandlers.delete(normalizedName);
+    };
+  }
+
+  registerLifecycle(systemName, handlers = {}) {
+    if (!systemName) {
+      return () => {};
+    }
+
+    const normalizedName = String(systemName).trim();
+    const payload = {
+      applyRotor: typeof handlers.applyRotor === 'function' ? handlers.applyRotor : null,
+      onActivate: typeof handlers.onActivate === 'function' ? handlers.onActivate : null,
+      onDeactivate: typeof handlers.onDeactivate === 'function' ? handlers.onDeactivate : null,
+    };
+
+    this.lifecycleHandlers.set(normalizedName, payload);
+
+    if (normalizedName === this.currentSystem) {
+      const rotor = { ...this.currentRotor };
+      if (payload.applyRotor) {
+        try {
+          payload.applyRotor(rotor);
+        } catch (error) {
+          console.warn('⚠️ Lifecycle applyRotor handler failed', error);
+        }
+      }
+      if (payload.onActivate) {
+        try {
+          payload.onActivate({ rotor });
+        } catch (error) {
+          console.warn('⚠️ Lifecycle onActivate handler failed', error);
+        }
+      }
+    }
+
+    return () => {
+      this.lifecycleHandlers.delete(normalizedName);
+    };
+  }
+
+  updateQuaternionRotor(rotor) {
+    if (!rotor) {
+      return;
+    }
+
+    const nextState = this.normalizeRotor(rotor);
+    this.currentRotor = nextState;
+
+    if (this.currentSystem) {
+      this.applyRotorToEngine(this.currentEngine, nextState);
+
+      const handler = this.quaternionHandlers.get(this.currentSystem);
+      if (typeof handler === 'function') {
+        try {
+          handler({ ...nextState });
+        } catch (error) {
+          console.warn('⚠️ Quaternion handler failed', error);
+        }
+      }
+
+      const lifecycle = this.lifecycleHandlers.get(this.currentSystem);
+      if (lifecycle?.applyRotor) {
+        try {
+          lifecycle.applyRotor({ ...nextState });
+        } catch (error) {
+          console.warn('⚠️ Lifecycle applyRotor handler failed', error);
+        }
+      }
+    }
+
+    this.dispatchSystemEvent('vib34d:rotor-updated', {
+      systemName: this.currentSystem,
+      rotor: { ...nextState }
+    });
+  }
+
+  normalizeRotor(candidate) {
+    const source = Array.isArray(candidate)
+      ? {
+          xy: candidate[0],
+          xz: candidate[1],
+          yz: candidate[2],
+          xw: candidate[3],
+          yw: candidate[4],
+          zw: candidate[5]
+        }
+      : candidate || {};
+
+    return {
+      xy: Number(source.xy ?? source.xY ?? 0) || 0,
+      xz: Number(source.xz ?? source.xZ ?? 0) || 0,
+      yz: Number(source.yz ?? source.yZ ?? 0) || 0,
+      xw: Number(source.xw ?? source.xW ?? 0) || 0,
+      yw: Number(source.yw ?? source.yW ?? 0) || 0,
+      zw: Number(source.zw ?? source.zW ?? 0) || 0
+    };
+  }
+
+  applyRotorToEngine(engine, rotor) {
+    if (!engine || !rotor) {
+      return;
+    }
+
+    if (typeof engine.applyRotorState === 'function') {
+      engine.applyRotorState(rotor);
+      return;
+    }
+
+    if (typeof engine.setRotorState === 'function') {
+      engine.setRotorState(rotor);
+    }
+
+    if (typeof engine.setQuaternionRotation === 'function') {
+      // Engines that still expect quaternion updates can derive the primary
+      // rotor plane from the XW/YW/ZW components. We synthesize a quaternion
+      // with zero XYZ angle so legacy math continues to function.
+      const pseudoQuaternion = this.rotorToQuaternion(rotor);
+      engine.setQuaternionRotation(pseudoQuaternion);
+    }
+
+    if (typeof engine.updateParameter === 'function') {
+      try {
+        engine.updateParameter('rot4dXY', rotor.xy);
+        engine.updateParameter('rot4dXZ', rotor.xz);
+        engine.updateParameter('rot4dYZ', rotor.yz);
+        engine.updateParameter('rot4dXW', rotor.xw);
+        engine.updateParameter('rot4dYW', rotor.yw);
+        engine.updateParameter('rot4dZW', rotor.zw);
+      } catch (error) {
+        console.warn('⚠️ Failed to push rotor parameters', error);
+      }
+    }
+
+    if (engine.parameters?.setParameter) {
+      engine.parameters.setParameter('rot4dXY', rotor.xy);
+      engine.parameters.setParameter('rot4dXZ', rotor.xz);
+      engine.parameters.setParameter('rot4dYZ', rotor.yz);
+      engine.parameters.setParameter('rot4dXW', rotor.xw);
+      engine.parameters.setParameter('rot4dYW', rotor.yw);
+      engine.parameters.setParameter('rot4dZW', rotor.zw);
+    }
+  }
+
+  rotorToQuaternion(rotor) {
+    const halfX = rotor.xy * 0.5;
+    const halfY = rotor.xz * 0.5;
+    const halfZ = rotor.yz * 0.5;
+    const sinX = Math.sin(halfX);
+    const cosX = Math.cos(halfX);
+    const sinY = Math.sin(halfY);
+    const cosY = Math.cos(halfY);
+    const sinZ = Math.sin(halfZ);
+    const cosZ = Math.cos(halfZ);
+
+    return [
+      sinX * cosY * cosZ + cosX * sinY * sinZ,
+      cosX * sinY * cosZ - sinX * cosY * sinZ,
+      cosX * cosY * sinZ + sinX * sinY * cosZ,
+      cosX * cosY * cosZ - sinX * sinY * sinZ
+    ];
   }
 
   async switchToSystem(systemName, engineClasses) {
@@ -31,6 +223,7 @@ export class CanvasManager {
         systemName: previousSystem,
         systems: [previousSystem]
       });
+      this.notifyLifecycle(previousSystem, 'onDeactivate');
     }
 
     // STEP 1: DESTROY current engine completely
@@ -64,6 +257,10 @@ export class CanvasManager {
     this.currentSystem = systemName;
     this.currentEngine = engine;
 
+    if (engine) {
+      this.applyRotorToEngine(engine, this.currentRotor);
+    }
+
     this.handleResize();
     console.log(`✅ DESTROY → CREATE complete: ${systemName} ready`);
 
@@ -72,8 +269,31 @@ export class CanvasManager {
       systems: [systemName],
       engineReady: !!engine
     });
+    this.notifyLifecycle(systemName, 'onActivate');
 
     return engine;
+  }
+
+  notifyLifecycle(systemName, hook, detail = {}) {
+    if (!systemName) {
+      return;
+    }
+
+    const lifecycle = this.lifecycleHandlers.get(systemName);
+    if (!lifecycle) {
+      return;
+    }
+
+    const handler = lifecycle[hook];
+    if (typeof handler !== 'function') {
+      return;
+    }
+
+    try {
+      handler({ rotor: { ...this.currentRotor }, ...detail });
+    } catch (error) {
+      console.warn(`⚠️ Lifecycle ${hook} handler failed`, error);
+    }
   }
 
   dispatchSystemEvent(eventName, detail = {}) {
@@ -289,6 +509,8 @@ export class CanvasManager {
         // Ignore orientation removal failures
       }
     }
+
+    this.lifecycleHandlers.clear();
   }
 
   async createFreshEngine(systemName, engineClasses) {
@@ -338,7 +560,23 @@ export class CanvasManager {
       console.error(`💥 Engine creation failed for ${systemName}:`, error);
       engine = null;
     }
-    
+
+    if (engine && !this.lifecycleHandlers.has(systemName)) {
+      this.registerLifecycle(systemName, {
+        applyRotor: rotor => this.applyRotorToEngine(engine, rotor),
+        onActivate: () => {
+          if (typeof engine.setActive === 'function') {
+            engine.setActive(true);
+          }
+        },
+        onDeactivate: () => {
+          if (typeof engine.setActive === 'function') {
+            engine.setActive(false);
+          }
+        }
+      });
+    }
+
     return engine;
   }
 }

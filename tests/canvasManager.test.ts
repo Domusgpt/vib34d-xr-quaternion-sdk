@@ -193,4 +193,31 @@ describe('CanvasManager', () => {
       expect(removeEventListenerSpy).toHaveBeenCalledWith('orientationchange', orientationCall[1], { passive: true });
     }
   });
+
+  it('registers lifecycle hooks and dispatches rotor updates to handlers', () => {
+    manager.destroyAllCanvasesAndCreateFresh('faceted');
+    manager.currentSystem = 'faceted';
+
+    const applyRotor = vi.fn();
+    const onActivate = vi.fn();
+    const onDeactivate = vi.fn();
+
+    const cleanup = manager.registerLifecycle('faceted', {
+      applyRotor,
+      onActivate,
+      onDeactivate,
+    });
+
+    expect(onActivate).toHaveBeenCalledTimes(1);
+    expect(manager.lifecycleHandlers.has('faceted')).toBe(true);
+
+    manager.updateQuaternionRotor({ xy: 0.42, xz: 0, yz: 0, xw: 0, yw: 0, zw: 0 });
+    expect(applyRotor).toHaveBeenCalledWith(expect.objectContaining({ xy: 0.42 }));
+
+    manager.notifyLifecycle('faceted', 'onDeactivate');
+    expect(onDeactivate).toHaveBeenCalledTimes(1);
+
+    cleanup();
+    expect(manager.lifecycleHandlers.has('faceted')).toBe(false);
+  });
 });
