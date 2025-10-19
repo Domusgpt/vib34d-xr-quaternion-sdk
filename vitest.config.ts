@@ -7,7 +7,13 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
-      reportsDirectory: 'coverage'
+      reportsDirectory: 'coverage',
+      thresholds: {
+        lines: 30,
+        statements: 30,
+        functions: 25,
+        branches: 20
+      }
     }
   }
 });

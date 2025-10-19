@@ -3,3 +3,4 @@ export * from './QuaternionFabricRouter.ts';
 export * from './RotorFusionService.ts';
 export * from './PredictiveRotorCache.ts';
 export * from './SpatialStoryGraph.ts';
+export * from './SpatialConsensusModule.ts';

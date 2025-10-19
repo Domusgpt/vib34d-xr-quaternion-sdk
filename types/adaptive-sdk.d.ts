@@ -1,0 +1,1239 @@
+/**
+ * Adaptive SDK Type Definitions
+ * ---------------------------------------------
+ * These declarations capture the public surface of the VIB34D XR Quaternion
+ * SDK so TypeScript partners can integrate against the documented runtime
+ * boundary without relying on ambient "any" types.
+ */
+
+export type JsonValue =
+    | string
+    | number
+    | boolean
+    | null
+    | JsonObject
+    | JsonArray;
+export interface JsonObject {
+    [key: string]: JsonValue;
+}
+export interface JsonArray extends Array<JsonValue> {}
+
+export type QuaternionTuple = readonly [number, number, number, number];
+export type Vec3Tuple = readonly [number, number, number];
+export interface DualQuaternionStruct {
+    real: QuaternionTuple;
+    dual: QuaternionTuple;
+}
+export interface Rotor6Struct {
+    xy: number;
+    xz: number;
+    yz: number;
+    xw: number;
+    yw: number;
+    zw: number;
+}
+
+export type XRDeviceRole = 'headset' | 'controller' | 'hand';
+export type XRHandedness = 'none' | 'left' | 'right';
+export type XRPoseReliability = 'tracked' | 'estimated' | 'unavailable';
+
+export interface ConsentOption {
+    /** Unique consent classification handled by the telemetry harness. */
+    classification: string;
+    /** Friendly title exposed to end-users. */
+    title: string;
+    /** Optional descriptive copy rendered alongside the toggle. */
+    description?: string;
+}
+
+export interface ConsentPanelOptions {
+    /** DOM element that will host the consent experience. */
+    container: HTMLElement;
+    /** Consent toggles rendered into the panel. */
+    consentOptions?: ConsentOption[];
+    /** Snapshot provider wired to `ProductTelemetryHarness.getConsentSnapshot`. */
+    getTelemetryConsent?: () => TelemetryConsentSnapshot | TelemetryConsentMap;
+    /** Callback invoked whenever a consent toggle is updated. */
+    onConsentToggle?: (classification: string, enabled: boolean) => void;
+    /** Hook delivering compliance/audit records for display and downloads. */
+    getComplianceRecords?: () => TelemetryAuditEntry[];
+    /** Optional accessor for telemetry audit trails. */
+    getTelemetryAuditTrail?: () => TelemetryAuditEntry[];
+    /** Interval, in milliseconds, used when refreshing the compliance log. */
+    refreshInterval?: number;
+    /** Formatter used when exporting audit/compliance history. */
+    downloadFormatter?: (records: TelemetryAuditEntry[]) => string;
+    /** Prefix applied to generated download file names. */
+    downloadFileNamePrefix?: string;
+    /** Interceptor invoked before exporting compliance records. */
+    onDownload?: (payload: { records: TelemetryAuditEntry[]; payload: string }) => void;
+    /** Lifecycle hook triggered after consent state renders. */
+    onRender?: (context: { consent: TelemetryConsentSnapshot | TelemetryConsentMap; metadata?: JsonObject }) => void;
+    /** Telemetry hook automatically fired whenever a toggle flips. */
+    trackConsentToggle?: (classification: string, enabled: boolean) => void;
+    /** Factory used to create the temporary download anchor element. */
+    createAnchor?: () => HTMLAnchorElement;
+    /** Heading label rendered above the consent grid. */
+    heading?: string;
+}
+
+export interface ConsentPanelInstance {
+    /** Mounts the panel into the configured container. */
+    mount(): ConsentPanelInstance;
+    /** Tears down listeners and timers. */
+    destroy(): void;
+    /** Forces the compliance log to refresh immediately. */
+    refreshComplianceLog(): void;
+    /** Synchronises the UI when consent snapshots are updated externally. */
+    handleConsentDecision(consent: TelemetryConsentSnapshot | TelemetryConsentMap, metadata?: JsonObject): void;
+}
+
+export type TelemetryConsentMap = Record<string, boolean>;
+
+export interface TelemetryConsentSnapshot extends TelemetryConsentMap {
+    /** ISO timestamp representing the last update. */
+    updatedAt?: string;
+    /** Optional metadata describing the consent origin. */
+    metadata?: JsonObject;
+}
+
+export interface TelemetryAuditEntry {
+    event: string;
+    classification?: string;
+    source?: string;
+    payload?: JsonObject;
+    timestamp: string | number | Date;
+}
+
+export interface TelemetryEvent {
+    event: string;
+    payload?: JsonObject;
+    classification?: string;
+    timestamp?: string | number | Date;
+    source?: string;
+    licenseKey?: string | null;
+    [key: string]: unknown;
+}
+
+export interface TelemetryBatchContext {
+    reason: string;
+    sequence: number;
+    startedAt: number;
+    triggeredAt: number | null;
+    windowMs: number;
+    size: number;
+}
+
+export interface TelemetryBatchMetrics {
+    dropped: number;
+    delivered: number;
+    flushes: number;
+    bufferSize: number;
+}
+
+export interface TelemetryBatchFlushOptions {
+    reason?: string;
+}
+
+export interface TelemetryBatchFlushResult {
+    batches: number;
+    events: number;
+    delivered: number;
+    dropped: number;
+    reason: string;
+}
+
+export type TelemetryBatchAutoFlushRegistration = (
+    flush: (reason?: string) => Promise<unknown> | unknown
+) => void | (() => void);
+
+export interface TelemetryBatchAutoFlushConfig {
+    visibilityChange?: boolean;
+    pageHide?: boolean;
+    beforeUnload?: boolean;
+    freeze?: boolean;
+    flushHiddenOnly?: boolean;
+    intervalMs?: number;
+    reasons?: {
+        visibilityChange?: string;
+        pageHide?: string;
+        beforeUnload?: string;
+        freeze?: string;
+        interval?: string;
+        [key: string]: string | undefined;
+    };
+    custom?: TelemetryBatchAutoFlushRegistration[];
+    [key: string]: unknown;
+}
+
+export interface TelemetryBatchOptions {
+    enabled?: boolean;
+    maxSize?: number;
+    maxAgeMs?: number;
+    maxBufferedEvents?: number;
+    retryOnFailure?: boolean;
+    preferBatchedDelivery?: boolean;
+    logger?: Console;
+    autoFlush?: boolean | TelemetryBatchAutoFlushConfig;
+}
+
+export interface TelemetryBatcher {
+    readonly size: number;
+    readonly oldestTimestamp: number | null;
+    enqueue(record: TelemetryEvent, context?: JsonObject): void;
+    flush(options?: TelemetryBatchFlushOptions): Promise<TelemetryBatchFlushResult>;
+    drain(options?: TelemetryBatchFlushOptions): Promise<TelemetryBatchFlushResult>;
+    getMetrics(): TelemetryBatchMetrics;
+    start(): void;
+    stop(): void;
+}
+
+export type TelemetryRequestMiddleware = (
+    event: TelemetryEvent,
+    next: () => Promise<void>
+) => Promise<void> | void;
+
+export interface TelemetryProvider {
+    id: string;
+    start?(): void | Promise<void>;
+    stop?(): void | Promise<void>;
+    flush?(): void | Promise<void>;
+    track?(event: TelemetryEvent): void | Promise<void>;
+    deliverBatch?(records: TelemetryEvent[], context?: TelemetryBatchContext): void | Promise<void>;
+    identify?(identity: JsonObject, traits?: JsonObject): void | Promise<void>;
+    registerRequestMiddleware?(middleware: TelemetryRequestMiddleware): void;
+    clearRequestMiddleware?(): void;
+    [key: string]: unknown;
+}
+
+export interface LicensePayload {
+    key: string;
+    tenantId?: string | null;
+    features?: string[];
+    expiresAt?: string | Date | null;
+    issuedAt?: string | Date | null;
+    signature?: string | null;
+    metadata?: JsonObject;
+}
+
+export interface LicenseManagerStatus {
+    state: 'unregistered' | 'pending' | 'valid' | 'invalid' | 'expired' | string;
+    reason?: string;
+    validatedAt?: string | null;
+    metadata?: JsonObject;
+    error?: string;
+}
+
+export interface LicenseManagerOptions {
+    validators?: Array<(license: LicensePayload, context: JsonObject) => unknown | Promise<unknown>>;
+    clock?: () => Date | number;
+    logger?: Console;
+}
+
+export class LicenseManager {
+    constructor(options?: LicenseManagerOptions);
+    onStatusChange(listener: (status: LicenseManagerStatus) => void): () => void;
+    getLicense(): LicensePayload | null;
+    setLicense(license: LicensePayload | null): LicenseManagerStatus;
+    clearLicense(): LicenseManagerStatus;
+    registerValidator(validator: (license: LicensePayload, context: JsonObject) => unknown | Promise<unknown>): () => void;
+    validate(context?: JsonObject): Promise<LicenseManagerStatus>;
+    getStatus(): LicenseManagerStatus;
+    getValidationHistory(): LicenseManagerStatus[];
+}
+
+export interface LicenseAttestor {
+    createValidator(context?: JsonObject):
+        | ((license: LicensePayload, context?: JsonObject) => Promise<boolean | JsonObject> | boolean | JsonObject)
+        | Promise<(license: LicensePayload, context?: JsonObject) => Promise<boolean | JsonObject> | boolean | JsonObject>;
+    bindToLicenseManager?(manager: LicenseManager, options?: JsonObject): () => void;
+    on?(event: string, listener: (payload: unknown) => void): () => void;
+    off?(event: string, listener: (payload: unknown) => void): void;
+    detach?(): void;
+    getHistory?(): Array<{ timestamp: string; entry: unknown }> | unknown[];
+}
+
+export interface RemoteLicenseAttestorOptions {
+    attestationUrl?: string | null;
+    revocationUrl?: string | null;
+    entitlementsUrl?: string | null;
+    fetch?: typeof fetch;
+    logger?: Console;
+    clock?: () => Date | number;
+    pollIntervalMs?: number;
+    minimumPollIntervalMs?: number;
+    failOpen?: boolean;
+    headers?: Record<string, string>;
+    transformRequest?: (request: JsonObject & { url?: string }) => JsonObject;
+    transformResponse?: (response: unknown) => unknown;
+    historyLimit?: number;
+}
+
+export class RemoteLicenseAttestor implements LicenseAttestor {
+    constructor(options?: RemoteLicenseAttestorOptions);
+    createValidator(
+        context?: JsonObject
+    ): (license: LicensePayload, context?: JsonObject) => Promise<boolean | JsonObject> | boolean | JsonObject;
+    bindToLicenseManager(manager: LicenseManager, options?: JsonObject): () => void;
+    detach(): void;
+    getHistory(): Array<{ timestamp: string; entry: unknown }>;
+    on(event: string, listener: (payload: unknown) => void): () => void;
+    off(event: string, listener: (payload: unknown) => void): void;
+}
+
+export interface LicenseAttestationProfile {
+    id: string;
+    name?: string;
+    sla?: string;
+    metadata?: JsonObject;
+    description?: string;
+    [key: string]: unknown;
+}
+
+export interface LicenseAttestationProfilePack {
+    id: string;
+    profiles: LicenseAttestationProfile[];
+    defaultProfileId?: string | null;
+    metadata?: JsonObject;
+}
+
+export interface LicenseAttestationProfilePackOptions {
+    applyDefault?: boolean;
+    [key: string]: unknown;
+}
+
+export interface LicenseAttestorBindingResult {
+    attestor: LicenseAttestor | null;
+    binding?: JsonObject;
+    profile?: LicenseAttestationProfile | null;
+}
+
+export interface CommercializationSnapshotQuery {
+    limit?: number;
+    since?: string | Date;
+    until?: string | Date;
+    filter?: JsonObject;
+}
+
+export interface LicenseCommercializationSnapshot {
+    id: string;
+    capturedAt: string;
+    metrics: JsonObject;
+    context?: JsonObject;
+}
+
+export interface LicenseCommercializationSummary {
+    totalProfiles?: number;
+    activeProfiles?: number;
+    lastSnapshotAt?: string | null;
+    [key: string]: unknown;
+}
+
+export interface CommercializationSnapshotExportOptions {
+    format?: 'json' | 'csv' | string;
+    fields?: string[];
+    filter?: JsonObject;
+    filename?: string;
+}
+
+export interface CommercializationSnapshotExportResult {
+    format: string;
+    payload: string | Blob | ArrayBufferLike | JsonObject;
+    filename?: string;
+}
+
+export interface CommercializationKpiQuery {
+    window?: 'daily' | 'weekly' | 'monthly' | string;
+    filter?: JsonObject;
+}
+
+export interface LicenseCommercializationKpiReport {
+    window: string;
+    metrics: JsonObject;
+    generatedAt: string;
+    [key: string]: unknown;
+}
+
+export interface LicenseCommercializationReporter {
+    addUpdateListener(listener: (summary: LicenseCommercializationSummary) => void): () => void;
+    getPackIdForProfile(profileId: string): string | null | undefined;
+    recordProfileRegistration(profile: LicenseAttestationProfile, context?: JsonObject): void;
+    recordSnapshot?(snapshot: LicenseCommercializationSnapshot, context?: JsonObject): void;
+    [key: string]: unknown;
+}
+
+export interface LicenseCommercializationSnapshotStore {
+    recordSnapshot(summary: LicenseCommercializationSummary, context?: JsonObject): void;
+    getSnapshots(options?: CommercializationSnapshotQuery): LicenseCommercializationSnapshot[];
+    exportSnapshots?(options?: CommercializationSnapshotExportOptions):
+        | CommercializationSnapshotExportResult
+        | Promise<CommercializationSnapshotExportResult>;
+    whenReady?(): Promise<void>;
+    [key: string]: unknown;
+}
+
+export interface TelemetryProviderBlueprintEvent {
+    name: string;
+    description?: string;
+    consent?: string;
+    pii?: string[];
+    metadata?: JsonObject;
+}
+
+export interface TelemetryProviderBlueprint {
+    id: string;
+    description: string;
+    consentClassification: string;
+    retentionDays: number;
+    piiCategories: string[];
+    events: TelemetryProviderBlueprintEvent[];
+    metadata?: JsonObject;
+}
+
+export interface TelemetryProviderBlueprintInput {
+    id: string;
+    description?: string;
+    consentClassification?: string;
+    retentionDays?: number;
+    piiCategories?: readonly string[];
+    events: (string | TelemetryProviderBlueprintEvent)[];
+    metadata?: JsonObject;
+}
+
+export interface TelemetryConsentExportEnvelope {
+    classification: string;
+    revision: number;
+    generatedAt: string;
+    metadata?: JsonObject;
+}
+
+export interface TelemetryConsentExportOptions {
+    format?: 'json' | 'csv' | string;
+    classification?: string;
+    revision?: number;
+    timestamp?: number | Date | string;
+    metadata?: JsonObject;
+}
+
+export interface TelemetryConsentExportBundle {
+    format: string;
+    payload: unknown;
+    consent?: TelemetryConsentSnapshot;
+    auditTrail?: TelemetryAuditEntry[];
+    envelope?: TelemetryConsentExportEnvelope;
+}
+
+export interface ReferenceTelemetryBlueprintOverride {
+    enabled?: boolean;
+    blueprint?: Partial<TelemetryProviderBlueprintInput>;
+}
+
+export interface ReferenceTelemetryProviderConfiguration extends ReferenceTelemetryBlueprintOverride {
+    provider?: TelemetryProvider;
+    providerOptions?: JsonObject;
+    log?: boolean;
+    endpoint?: string;
+    requestMiddleware?: TelemetryRequestMiddleware | TelemetryRequestMiddleware[];
+    storageKey?: string;
+    includeClassifications?: string[];
+}
+
+export interface ReferenceTelemetryBlueprintOptions {
+    console?: ReferenceTelemetryBlueprintOverride;
+    http?: ReferenceTelemetryBlueprintOverride;
+    complianceVault?: ReferenceTelemetryBlueprintOverride;
+}
+
+export interface ReferenceTelemetryConsentBundleOptions extends TelemetryConsentExportOptions {
+    enabled?: boolean;
+}
+
+export interface ReferenceTelemetryProviderOptions {
+    console?: ReferenceTelemetryProviderConfiguration;
+    http?: ReferenceTelemetryProviderConfiguration;
+    complianceVault?: ReferenceTelemetryProviderConfiguration;
+    consentBundle?: ReferenceTelemetryConsentBundleOptions | boolean;
+}
+
+export interface ReferenceTelemetryProviderEntry {
+    provider: TelemetryProvider;
+    blueprint: TelemetryProviderBlueprint;
+}
+
+export interface ReferenceTelemetryProviderRegistration {
+    providers: Record<string, ReferenceTelemetryProviderEntry>;
+    blueprints: Record<string, TelemetryProviderBlueprint>;
+    consentBundle: TelemetryConsentExportBundle | null;
+}
+
+export interface TelemetryControls {
+    track(event: string, payload?: JsonObject, options?: JsonObject): void;
+    identify(identity: JsonObject, traits?: JsonObject): void;
+    flush(): Promise<void> | void;
+    deliverBatch(records: TelemetryEvent[], context?: JsonObject): Promise<unknown> | unknown;
+    flushBatches(options?: TelemetryBatchFlushOptions): Promise<TelemetryBatchFlushResult>;
+    start(): void;
+    stop(): void;
+    updateConsent(consent: TelemetryConsentMap, context?: JsonObject): void;
+    getConsentSnapshot(): TelemetryConsentSnapshot;
+    recordAudit(event: string, payload?: JsonObject, classification?: string): void;
+    recordSchemaIssue(issue: JsonObject): void;
+    setConsentDecisionHandler(handler: ((classification: string, allow: boolean) => void) | null): void;
+    registerProvider(provider: TelemetryProvider): AdaptiveInterfaceEngine;
+    removeProvider(id: string): AdaptiveInterfaceEngine;
+    registerRequestMiddleware(middleware: TelemetryRequestMiddleware): AdaptiveInterfaceEngine;
+    clearRequestMiddleware(): AdaptiveInterfaceEngine;
+    registerLicenseAttestationProfile(
+        profileOrId: string | LicenseAttestationProfile,
+        profile?: LicenseAttestationProfile
+    ): LicenseAttestationProfile;
+    registerLicenseAttestationProfilePack(
+        packOrId: string | LicenseAttestationProfilePack,
+        options?: LicenseAttestationProfilePackOptions
+    ): LicenseAttestationProfilePack;
+    getLicenseAttestationProfiles(): LicenseAttestationProfile[];
+    getLicenseAttestationProfile(id: string): LicenseAttestationProfile | undefined;
+    setDefaultLicenseAttestationProfile(id: string | null): AdaptiveInterfaceEngine;
+    setLicenseAttestorFromProfile(id: string, overrides?: JsonObject): LicenseAttestorBindingResult | undefined;
+    setLicenseManager(manager: LicenseManager): AdaptiveInterfaceEngine;
+    setLicenseAttestor(attestor: LicenseAttestor, options?: JsonObject): AdaptiveInterfaceEngine;
+    getAuditTrail(): TelemetryAuditEntry[];
+    getCommercializationSummary(): LicenseCommercializationSummary | null;
+    getCommercializationReporter(): LicenseCommercializationReporter | null;
+    getCommercializationSnapshotStore(): LicenseCommercializationSnapshotStore | null;
+    captureCommercializationSnapshot(context?: JsonObject): LicenseCommercializationSnapshot | null;
+    getCommercializationSnapshots(options?: CommercializationSnapshotQuery): LicenseCommercializationSnapshot[];
+    getCommercializationKpiReport(options?: CommercializationKpiQuery): LicenseCommercializationKpiReport;
+    exportCommercializationSnapshots(
+        options?: CommercializationSnapshotExportOptions
+    ): CommercializationSnapshotExportResult | Promise<CommercializationSnapshotExportResult>;
+    startCommercializationSnapshotSchedule(intervalMs: number, context?: JsonObject): unknown;
+    stopCommercializationSnapshotSchedule(): AdaptiveInterfaceEngine;
+    createProviderBlueprint?(blueprint: TelemetryProviderBlueprintInput): TelemetryProviderBlueprint;
+    exportConsentBundle?(options?: TelemetryConsentExportOptions): TelemetryConsentExportBundle;
+    getTelemetryBatcher?(): TelemetryBatcher | null;
+}
+
+export interface SensoryBridgeSubscription {
+    unsubscribe(): void;
+}
+
+export interface SensoryInputBridge {
+    start(): void;
+    stop(): void;
+    subscribe(channel: string, handler: (payload: unknown) => void): () => void | SensoryBridgeSubscription;
+    registerSchema(type: string, schema: JsonObject): void;
+    registerAdapter(type: string, adapter: SensorAdapter): void;
+    connectAdapter?(type: string): Promise<void>;
+    disconnectAdapter?(type: string): Promise<void>;
+    testAdapter?(type: string): Promise<void>;
+    setValidationReporter?(reporter: (issue: JsonObject) => void): void;
+    [key: string]: unknown;
+}
+
+export interface SensorAdapter {
+    connect?(): Promise<void> | void;
+    disconnect?(): Promise<void> | void;
+    test?(): Promise<void> | void;
+    [key: string]: unknown;
+}
+
+export interface SensorAdapterRegistration {
+    type: string;
+    instance: SensorAdapter;
+    autoConnect?: boolean;
+}
+
+export interface SensorSchemaRegistration {
+    type: string;
+    schema: JsonObject;
+}
+
+export interface SpatialLayoutSynthesizer {
+    registerStrategy(strategy: LayoutStrategy): SpatialLayoutSynthesizer;
+    clearStrategies(): void;
+    registerAnnotation(annotation: LayoutAnnotation): SpatialLayoutSynthesizer;
+    clearAnnotations(): void;
+    [key: string]: unknown;
+}
+
+export interface LayoutStrategy {
+    id: string;
+    description?: string;
+    execute?(context: JsonObject): unknown;
+    [key: string]: unknown;
+}
+
+export interface LayoutAnnotation {
+    id: string;
+    description?: string;
+    apply?(layout: unknown, context?: JsonObject): unknown;
+    [key: string]: unknown;
+}
+
+export interface ProjectionFieldComposer {
+    compose(blueprintOrLayout: unknown, design?: unknown, context?: unknown, options?: JsonObject): unknown;
+    [key: string]: unknown;
+}
+
+export interface ProjectionScenarioDescriptor extends JsonObject {
+    id: string;
+}
+
+export interface ProjectionScenarioCatalog {
+    applyToSimulator?(simulator: ProjectionScenarioSimulator): void;
+    list(): ProjectionScenarioDescriptor[];
+    get(id: string): ProjectionScenarioDescriptor | undefined;
+    register(descriptor: ProjectionScenarioDescriptor): string | ProjectionScenarioDescriptor;
+    registerPack?(pack: ProjectionScenarioDescriptor | ProjectionScenarioDescriptor[]): unknown;
+    remove(id: string): boolean;
+}
+
+export interface ProjectionScenarioSimulator {
+    step(options?: JsonObject): unknown;
+    setActiveScenario(id: string): void;
+    getActiveScenario(): ProjectionScenarioDescriptor | null;
+    [key: string]: unknown;
+}
+
+export interface ShaderQuaternionSynchronizerOptions {
+    bridge: SensoryInputBridge;
+    systems?: Record<string, unknown>;
+    systemResolver?: (name: string) => unknown;
+    rotationScale?: number;
+    minConfidence?: number;
+    baseAlpha?: number;
+    energySmoothing?: number;
+    velocityReference?: number;
+    logger?: Console;
+    targetSystems?: string[];
+    autoExclusiveActivation?: boolean;
+    maxActiveSystems?: number;
+    activationEventTarget?: EventTarget | null;
+    activationEvent?: string;
+    deactivationEvent?: string;
+}
+
+export interface ShaderQuaternionIngestContext {
+    confidence?: number;
+    timestamp?: number;
+    source?: string;
+}
+
+export interface ShaderQuaternionPoseSample {
+    orientation?: unknown;
+    poseTimestamp?: number;
+    frameTimestamp?: number;
+}
+
+export class ShaderQuaternionSynchronizer {
+    constructor(options: ShaderQuaternionSynchronizerOptions);
+    start(): this;
+    stop(): void;
+    dispose(): void;
+    setTargetSystems(systems: Iterable<string>): void;
+    getTargetSystems(): string[];
+    activateExclusiveSystem(systemName: string): void;
+    ingestQuaternion(
+        quaternion: QuaternionTuple | { x: number; y: number; z: number; w?: number },
+        context?: ShaderQuaternionIngestContext
+    ): this;
+    ingestPoseSample(sample: ShaderQuaternionPoseSample, context?: ShaderQuaternionIngestContext): this;
+    syncBaseParameters(parameters: Record<string, number>): void;
+    setEnabled(enabled: boolean): void;
+}
+
+export interface QuaternionPoseSample {
+    poseTimestamp: number;
+    frameTimestamp: number;
+    orientation: QuaternionTuple;
+    position: Vec3Tuple;
+    dualQuaternion: DualQuaternionStruct;
+}
+
+export interface QuaternionDeviceState {
+    id: string;
+    role: XRDeviceRole;
+    handedness: XRHandedness;
+    reliability: XRPoseReliability;
+    accuracy?: number;
+    linearVelocity?: Vec3Tuple | null;
+    angularVelocity?: Vec3Tuple | null;
+    metadata?: JsonObject;
+    lastUpdated: number;
+    current: QuaternionPoseSample;
+    previous?: QuaternionPoseSample;
+    buttons?: readonly number[];
+    triggers?: readonly number[];
+    joints?: readonly number[];
+}
+
+export interface XRTrackedPose {
+    id: string;
+    role: XRDeviceRole;
+    handedness: XRHandedness;
+    timestamp: number;
+    orientation: { x: number; y: number; z: number; w: number };
+    position: { x: number; y: number; z: number };
+    reliability: XRPoseReliability;
+    accuracy?: number;
+    linearVelocity?: { x: number; y: number; z: number };
+    angularVelocity?: { x: number; y: number; z: number };
+    buttons?: readonly number[];
+    triggers?: readonly number[];
+    joints?: readonly number[];
+    metadata?: JsonObject;
+}
+
+export interface QuaternionPoseFrame {
+    frameId: string;
+    timestamp: number;
+    referenceSpace: string;
+    head: XRTrackedPose;
+    controllers: XRTrackedPose[];
+    hands: XRTrackedPose[];
+    metadata?: JsonObject;
+}
+
+export interface QuaternionPoseRegistryOptions {
+    retentionMs?: number;
+}
+
+export class QuaternionPoseRegistry {
+    constructor(options?: QuaternionPoseRegistryOptions);
+    readonly size: number;
+    getLatestFrame(): QuaternionPoseFrame | null;
+    ingestFrame(payload: QuaternionPoseFrame | Record<string, unknown>): QuaternionPoseFrame;
+    getDevice(id: string): QuaternionDeviceState | null;
+    getDevices(): readonly QuaternionDeviceState[];
+    getDevicesByRole(role: XRDeviceRole): readonly QuaternionDeviceState[];
+    getInterpolatedDualQuaternion(
+        id: string,
+        alpha?: number
+    ): DualQuaternionStruct | null;
+    getInterpolatedRotor(id: string, alpha?: number): Rotor6Struct | null;
+    prune(referenceTimestamp?: number): void;
+    clear(): void;
+}
+
+export interface QuaternionPoseRegistrySynchronizerSyncInfo {
+    deviceId: string;
+    role: XRDeviceRole;
+    confidence: number;
+    timestamp: number;
+}
+
+export interface QuaternionPoseRegistrySynchronizerOptions {
+    registry: QuaternionPoseRegistry;
+    synchronizer: ShaderQuaternionSynchronizer;
+    preferRoles?: readonly XRDeviceRole[];
+    handednessPreference?: readonly XRHandedness[];
+    preferredDeviceIds?: readonly string[];
+    deviceFilter?: (device: QuaternionDeviceState) => boolean;
+    interpolationAlpha?: number;
+    updateIntervalMs?: number;
+    minConfidence?: number;
+    staleThresholdMs?: number;
+    autoStart?: boolean;
+    updateOnStart?: boolean;
+    timeSource?: () => number;
+}
+
+export class QuaternionPoseRegistrySynchronizer {
+    constructor(options: QuaternionPoseRegistrySynchronizerOptions);
+    start(immediate?: boolean): this;
+    stop(): this;
+    dispose(): void;
+    getLastSyncInfo(): QuaternionPoseRegistrySynchronizerSyncInfo | null;
+    syncOnce(): boolean;
+}
+
+export type LocalizationReliability = 'high' | 'medium' | 'low';
+
+export interface LocalizationProvenance {
+    referenceSpace?: string;
+    anchorId?: string;
+    trackingState?: string;
+    mappingStatus?: string;
+}
+
+export interface LocalizationMetrics {
+    accuracy?: number;
+    rawConfidence?: number;
+}
+
+export interface LocalizationSnapshot {
+    id: string;
+    source: string;
+    timestamp: number;
+    frameId?: string;
+    local: DualQuaternionStruct;
+    global?: DualQuaternionStruct | null;
+    confidence: number;
+    stageConfidence: number;
+    anchorConfidence: number;
+    drift: number;
+    reliability: LocalizationReliability;
+    latencyMs: number;
+    provenance: LocalizationProvenance;
+    metrics: LocalizationMetrics;
+}
+
+export interface FabricChannelState {
+    key: string;
+    source: string;
+    anchorId?: string;
+    referenceSpace?: string;
+    current: LocalizationSnapshot;
+    previous?: LocalizationSnapshot;
+    history: readonly LocalizationSnapshot[];
+    latencyMs: number;
+    jitterMs: number;
+    confidence: number;
+    drift: number;
+    recencyMs: number;
+}
+
+export interface FabricSummary {
+    overallConfidence: number;
+    worstDrift: number;
+    averageLatency: number;
+    channelCount: number;
+}
+
+export interface FabricAnchorSummary {
+    anchorId?: string;
+    referenceSpace?: string;
+    score: number;
+    representative: FabricChannelState;
+    averageConfidence: number;
+    averageLatency: number;
+    channelCount: number;
+    channels: readonly FabricChannelState[];
+}
+
+export interface QuaternionFabricRouterOptions {
+    historyLimit?: number;
+    timeSource?: () => number;
+}
+
+export interface FabricChannelSelectionOptions {
+    anchorId?: string;
+    referenceSpace?: string;
+    maxAgeMs?: number;
+    allowFallback?: boolean;
+}
+
+export class QuaternionFabricRouter {
+    constructor(options?: QuaternionFabricRouterOptions);
+    ingest(snapshot: LocalizationSnapshot): FabricChannelState;
+    getChannel(key: string): FabricChannelState | null;
+    listChannels(): FabricChannelState[];
+    summarize(): FabricSummary;
+    summarizeAnchors(): FabricAnchorSummary[];
+    selectPreferredChannel(options?: FabricChannelSelectionOptions): FabricChannelState | null;
+}
+
+export interface SpatialConsensusModuleOptions {
+    staleAfterMs?: number;
+    timeSource?: () => number;
+    weightFloor?: number;
+}
+
+export interface SpatialConsensusIngestOptions {
+    weightOverride?: number;
+    reliabilityOverride?: LocalizationReliability;
+    anchorId?: string | null;
+    referenceSpace?: string | null;
+}
+
+export interface SpatialConsensusParticipant {
+    id: string;
+    anchorId?: string;
+    referenceSpace?: string;
+    snapshot: LocalizationSnapshot;
+    weight: number;
+    lastUpdated: number;
+    recencyMs: number;
+    jitterMs: number;
+}
+
+export interface SpatialConsensusQuery {
+    anchorId?: string;
+    referenceSpace?: string;
+    maxAgeMs?: number;
+    minParticipants?: number;
+    fallbackToAnyAnchor?: boolean;
+}
+
+export interface SpatialConsensusResult {
+    anchorId?: string;
+    referenceSpace?: string;
+    participantCount: number;
+    participants: readonly SpatialConsensusParticipant[];
+    consensus: DualQuaternionStruct;
+    rotor: Rotor6Struct;
+    confidence: number;
+    reliability: LocalizationReliability;
+    averageLatency: number;
+    drift: number;
+    recencyMs: number;
+    timestamp: number;
+}
+
+export class SpatialConsensusModule {
+    constructor(options?: SpatialConsensusModuleOptions);
+    ingest(
+        participantId: string,
+        snapshot: LocalizationSnapshot,
+        options?: SpatialConsensusIngestOptions
+    ): SpatialConsensusParticipant;
+    ingestFabricChannel(channel: FabricChannelState, participantId?: string): SpatialConsensusParticipant;
+    ingestFabricRouter(
+        router: QuaternionFabricRouter,
+        options?: { participantPrefix?: string }
+    ): readonly SpatialConsensusParticipant[];
+    getParticipant(participantId: string): SpatialConsensusParticipant | null;
+    listParticipants(): readonly SpatialConsensusParticipant[];
+    getConsensus(query?: SpatialConsensusQuery): SpatialConsensusResult | null;
+    clear(): void;
+}
+
+export interface QuaternionPoseRegistrySynchronizerFactoryOptions
+    extends Partial<Omit<QuaternionPoseRegistrySynchronizerOptions, 'registry' | 'synchronizer'>> {
+    registry?: QuaternionPoseRegistry;
+    synchronizer?: ShaderQuaternionSynchronizer;
+    synchronizerOptions?: ShaderQuaternionSynchronizerOptions & {
+        systems?: Record<string, unknown>;
+        systemResolver?: (name: string) => unknown;
+    };
+}
+
+export type PoseReliabilityStatus = 'healthy' | 'degraded' | 'stale' | 'lost';
+
+export interface PoseReliabilitySnapshot {
+    deviceId: string;
+    role: XRDeviceRole;
+    handedness: XRHandedness;
+    reliability: XRPoseReliability;
+    status: PoseReliabilityStatus;
+    confidence: number;
+    timestamp: number;
+    recencyMs: number;
+}
+
+export interface PoseReliabilityMonitorOptions {
+    registry: QuaternionPoseRegistry;
+    telemetry: ProductTelemetryHarness;
+    updateIntervalMs?: number;
+    staleThresholdMs?: number;
+    degradedConfidenceThreshold?: number;
+    recoveredConfidenceThreshold?: number;
+    deviceFilter?: (device: QuaternionDeviceState) => boolean;
+    roleFilter?: readonly XRDeviceRole[];
+    includeRecoveredEvents?: boolean;
+    now?: () => number;
+    autoStart?: boolean;
+    onStateChange?: (snapshot: PoseReliabilitySnapshot) => void;
+}
+
+export type PoseReliabilityMonitorBootstrapOptions = Partial<
+    Omit<PoseReliabilityMonitorOptions, 'registry' | 'telemetry'>
+>;
+
+export class PoseReliabilityMonitor {
+    constructor(options: PoseReliabilityMonitorOptions);
+    start(immediate?: boolean): this;
+    stop(): this;
+    dispose(): void;
+    getCurrentStates(): readonly PoseReliabilitySnapshot[];
+    evaluate(): readonly PoseReliabilitySnapshot[];
+}
+
+export interface AdaptiveInterfaceEngine {
+    sensoryBridge: SensoryInputBridge;
+    layoutSynthesizer: SpatialLayoutSynthesizer;
+    telemetry: ProductTelemetryHarness;
+    telemetryFacade: TelemetryControls;
+    projectionComposer: ProjectionFieldComposer;
+    projectionSimulator: ProjectionScenarioSimulator;
+    projectionCatalog?: ProjectionScenarioCatalog;
+    marketplaceHooks?: JsonObject;
+    registerLayoutStrategy(strategy: LayoutStrategy): AdaptiveInterfaceEngine;
+    registerLayoutAnnotation(annotation: LayoutAnnotation): AdaptiveInterfaceEngine;
+    registerSensorSchema(type: string, schema: JsonObject): AdaptiveInterfaceEngine;
+    registerSensorAdapter(type: string, adapter: SensorAdapter): AdaptiveInterfaceEngine;
+    connectSensorAdapter(type: string): Promise<void>;
+    disconnectSensorAdapter(type: string): Promise<void>;
+    testSensorAdapter(type: string): Promise<void>;
+    getVisualSystem?(name: string): unknown;
+    composeProjectionField(
+        blueprintOrLayout: unknown,
+        design?: unknown,
+        context?: unknown,
+        options?: JsonObject
+    ): unknown;
+    getProjectionFrame(): unknown;
+    stepProjectionSimulation(options?: JsonObject): unknown;
+    registerProjectionScenario(descriptor: ProjectionScenarioDescriptor): string | ProjectionScenarioDescriptor;
+    registerProjectionScenarioPack(pack: ProjectionScenarioDescriptor | ProjectionScenarioDescriptor[]): unknown;
+    removeProjectionScenario(id: string): boolean;
+    listProjectionScenarios(): ProjectionScenarioDescriptor[];
+    listProjectionScenarioPacks(): ProjectionScenarioDescriptor[];
+    getProjectionScenario(id: string): ProjectionScenarioDescriptor | undefined;
+    getProjectionScenarioPack(id: string): ProjectionScenarioDescriptor | undefined;
+    setActiveProjectionScenario(id: string): void;
+    getActiveProjectionScenario(): ProjectionScenarioDescriptor | null;
+    getProjectionScenarioCatalog(): ProjectionScenarioCatalog;
+    applyLicenseAttestationProfile(id: string, overrides?: JsonObject): LicenseAttestorBindingResult;
+}
+
+export interface ProductTelemetryHarness {
+    start(): void;
+    stop(): void;
+    track(event: string, payload?: JsonObject, options?: JsonObject): void;
+    deliverBatch(records: TelemetryEvent[], context?: JsonObject): Promise<unknown> | unknown;
+    identify(identity: JsonObject, traits?: JsonObject): void;
+    updateConsent(consent: TelemetryConsentMap, context?: JsonObject): void;
+    getConsentSnapshot(): TelemetryConsentSnapshot;
+    recordAudit(event: string, payload?: JsonObject, classification?: string): void;
+    recordSchemaIssue(issue: JsonObject): void;
+    setConsentDecisionHandler(handler: ((classification: string, allow: boolean) => void) | null): void;
+    registerProvider(provider: TelemetryProvider): void;
+    removeProvider(id: string): void;
+    registerRequestMiddleware(middleware: TelemetryRequestMiddleware): void;
+    clearRequestMiddleware(): void;
+    registerLicenseAttestationProfile(
+        profileOrId: string | LicenseAttestationProfile,
+        profile?: LicenseAttestationProfile
+    ): LicenseAttestationProfile;
+    registerLicenseAttestationProfilePack(
+        packOrId: string | LicenseAttestationProfilePack,
+        options?: LicenseAttestationProfilePackOptions
+    ): LicenseAttestationProfilePack;
+    getLicenseAttestationProfiles(): LicenseAttestationProfile[];
+    getLicenseAttestationProfile(id: string): LicenseAttestationProfile | undefined;
+    setDefaultLicenseAttestationProfile(id: string | null): void;
+    setLicenseAttestor(attestor: LicenseAttestor, options?: JsonObject): void;
+    setLicenseAttestorFromProfile(id: string, overrides?: JsonObject): LicenseAttestorBindingResult | undefined;
+    getAuditTrail(): TelemetryAuditEntry[];
+    getCommercializationSummary(): LicenseCommercializationSummary | null;
+    getCommercializationReporter(): LicenseCommercializationReporter | null;
+    getCommercializationSnapshotStore(): LicenseCommercializationSnapshotStore | null;
+    captureCommercializationSnapshot(context?: JsonObject): LicenseCommercializationSnapshot | null;
+    getCommercializationSnapshots(options?: CommercializationSnapshotQuery): LicenseCommercializationSnapshot[];
+    getCommercializationKpiReport(options?: CommercializationKpiQuery): LicenseCommercializationKpiReport;
+    exportCommercializationSnapshots(
+        options?: CommercializationSnapshotExportOptions
+    ): CommercializationSnapshotExportResult | Promise<CommercializationSnapshotExportResult>;
+    startCommercializationSnapshotSchedule(intervalMs: number, context?: JsonObject): unknown;
+    stopCommercializationSnapshotSchedule(): void;
+    setLicenseManager(manager: LicenseManager): void;
+    setLicenseAttestor(attestor: LicenseAttestor, options?: JsonObject): void;
+    getLicenseAttestor?(): LicenseAttestor | null;
+    flushBatches(options?: TelemetryBatchFlushOptions): Promise<TelemetryBatchFlushResult>;
+    getTelemetryBatcher(): TelemetryBatcher | null;
+}
+
+export interface TelemetryHooks {
+    onProviderRegistered?(provider: TelemetryProvider, result?: unknown): void;
+    onProviderRemoved?(id: string, result?: unknown): void;
+    onRequestMiddlewareCleared?(result?: unknown): void;
+    onDefaultAttestationProfileChanged?(id: string | null): void;
+    onCommercializationScheduleStarted?(intervalMs: number, context?: JsonObject, handle?: unknown): void;
+    onCommercializationScheduleStopped?(result?: unknown): void;
+}
+
+export interface TelemetryFacadeOptions {
+    harness: ProductTelemetryHarness;
+    owner?: AdaptiveInterfaceEngine | ProductTelemetryHarness | unknown;
+    hooks?: TelemetryHooks;
+}
+
+export interface AdaptiveSDKLicenseConfig extends LicenseBootstrapOptions {
+    /** Existing license manager to reuse instead of instantiating a new one. */
+    managerOptions?: LicenseManagerOptions;
+}
+
+export interface LicenseBootstrapOptions extends LicensePayload {
+    validators?: Array<(license: LicensePayload, context: JsonObject) => unknown | Promise<unknown>>;
+    autoValidate?: boolean;
+    managerOptions?: LicenseManagerOptions;
+    attestor?: LicenseAttestor | RemoteLicenseAttestorOptions;
+    attestorBinding?: JsonObject;
+    attestorProfileId?: string;
+    attestorProfileOverrides?: JsonObject;
+}
+
+export interface AdaptiveSDKProjectionConfig {
+    composer?: JsonObject;
+    simulator?: JsonObject;
+    catalog?: ProjectionScenarioCatalog | JsonObject;
+}
+
+export interface AdaptiveSDKConfig {
+    sensory?: JsonObject;
+    layout?: JsonObject;
+    design?: JsonObject;
+    projection?: AdaptiveSDKProjectionConfig;
+    telemetry?: JsonObject;
+    marketplaceHooks?: JsonObject;
+    projectionComposer?: JsonObject;
+    layoutStrategies?: LayoutStrategy[];
+    layoutAnnotations?: LayoutAnnotation[];
+    sensorSchemas?: SensorSchemaRegistration[] | Record<string, JsonObject>;
+    sensorAdapters?: SensorAdapterRegistration[];
+    telemetryProviders?: TelemetryProvider[];
+    telemetryConsent?: TelemetryConsentMap;
+    consentOptions?: ConsentOption[];
+    replaceDefaultProviders?: boolean;
+    licenseManager?: LicenseManager;
+    license?: LicenseBootstrapOptions;
+    licenseAttestor?: LicenseAttestor | RemoteLicenseAttestorOptions;
+    licenseAttestorBinding?: JsonObject;
+    licenseAttestorProfileId?: string;
+    licenseAttestorProfileOverrides?: JsonObject;
+    licenseAttestationProfilePacks?: Array<string | LicenseAttestationProfilePack>;
+    licenseAttestationProfilePackId?: string;
+    licenseAttestationProfilePackOptions?: JsonObject;
+    licenseAttestationProfiles?: LicenseAttestationProfile[];
+    defaultLicenseAttestationProfileId?: string;
+    commercialization?: JsonObject;
+    commercializationReporter?: LicenseCommercializationReporter;
+    systems?: Record<string, unknown>;
+    systemResolver?: (name: string) => unknown;
+    poseRegistry?: QuaternionPoseRegistry;
+    poseRegistryOptions?: QuaternionPoseRegistryOptions;
+    enablePoseRegistry?: boolean;
+    poseRegistryIngestors?: { pose?: boolean; poseFrame?: boolean };
+    poseRegistryIngestion?: { pose?: boolean; poseFrame?: boolean };
+    enablePoseReliabilityMonitor?: boolean;
+    poseReliabilityMonitor?: boolean | PoseReliabilityMonitorBootstrapOptions;
+    enableSpatialConsensus?: boolean;
+    spatialConsensus?: SpatialConsensusModule | SpatialConsensusModuleOptions;
+}
+
+export interface AdaptiveSDKInstance {
+    /** Underlying adaptive engine wiring sensors, layout, telemetry, and projection systems. */
+    engine: AdaptiveInterfaceEngine;
+    /** Convenience alias for `engine.sensoryBridge`. */
+    sensoryBridge: SensoryInputBridge;
+    /** Convenience alias for `engine.layoutSynthesizer`. */
+    layoutSynthesizer: SpatialLayoutSynthesizer;
+    /** Product telemetry harness backing the facade/controls. */
+    telemetry: ProductTelemetryHarness;
+    /** High-level telemetry facade with helper ergonomics. */
+    telemetryControls: TelemetryControls;
+    /** Projection composer used for holographic/polychora layouts. */
+    projectionComposer: ProjectionFieldComposer;
+    /** Scenario simulator used for what-if projection modelling. */
+    projectionSimulator: ProjectionScenarioSimulator;
+    /** Optional license manager if configured at bootstrap. */
+    licenseManager: LicenseManager | null;
+    /** Optional license attestor in use by the telemetry harness. */
+    licenseAttestor: LicenseAttestor | null;
+    /** Raw synchronizer constructor for advanced consumers. */
+    ShaderQuaternionSynchronizer: typeof ShaderQuaternionSynchronizer;
+    /** Shared quaternion pose registry constructor exposed for consumers. */
+    QuaternionPoseRegistry: typeof QuaternionPoseRegistry;
+    /** Registry-to-shader synchronizer constructor for advanced routing. */
+    QuaternionPoseRegistrySynchronizer: typeof QuaternionPoseRegistrySynchronizer;
+    /** Pose registry instance maintained by the SDK when enabled. */
+    poseRegistry: QuaternionPoseRegistry | null;
+    /** Pose reliability monitor tracking device health & emitting telemetry events. */
+    poseReliabilityMonitor: PoseReliabilityMonitor | null;
+    /** Shared spatial consensus module aggregating localization snapshots across participants. */
+    spatialConsensus: SpatialConsensusModule | null;
+    /**
+     * Factory for quaternion synchronizers that respects the engine's registered
+     * visual systems plus any explicit overrides provided at call time.
+     */
+    createShaderQuaternionSynchronizer(
+        options?: ShaderQuaternionSynchronizerOptions & {
+            systems?: Record<string, unknown>;
+            systemResolver?: (name: string) => unknown;
+        }
+    ): ShaderQuaternionSynchronizer;
+    /** Creates a pose-registry synchronizer wired to the shared shader synchronizer surface. */
+    createQuaternionPoseRegistrySynchronizer(
+        options?: QuaternionPoseRegistrySynchronizerFactoryOptions
+    ): QuaternionPoseRegistrySynchronizer;
+    /** Creates a spatial consensus module with the SDK defaults applied. */
+    createSpatialConsensusModule(options?: SpatialConsensusModuleOptions): SpatialConsensusModule;
+    registerLayoutStrategy(strategy: LayoutStrategy): AdaptiveInterfaceEngine;
+    registerLayoutAnnotation(annotation: LayoutAnnotation): AdaptiveInterfaceEngine;
+    registerTelemetryProvider(provider: TelemetryProvider): AdaptiveInterfaceEngine;
+    registerTelemetryRequestMiddleware(middleware: TelemetryRequestMiddleware): AdaptiveInterfaceEngine;
+    clearTelemetryRequestMiddleware(): AdaptiveInterfaceEngine;
+    registerLicenseAttestationProfile(
+        profileOrId: string | LicenseAttestationProfile,
+        profile?: LicenseAttestationProfile
+    ): LicenseAttestationProfile;
+    registerLicenseAttestationProfilePack(
+        packOrId: string | LicenseAttestationProfilePack,
+        options?: LicenseAttestationProfilePackOptions
+    ): LicenseAttestationProfilePack;
+    getLicenseAttestationProfiles(): LicenseAttestationProfile[];
+    getLicenseAttestationProfile(id: string): LicenseAttestationProfile | undefined;
+    setDefaultLicenseAttestationProfile(id: string | null): AdaptiveInterfaceEngine;
+    setLicenseAttestorFromProfile(id: string, overrides?: JsonObject): LicenseAttestorBindingResult | undefined;
+    registerSensorSchema(type: string, schema: JsonObject): AdaptiveInterfaceEngine;
+    registerSensorAdapter(registration: SensorAdapterRegistration): AdaptiveInterfaceEngine;
+    connectSensorAdapter(type: string): Promise<void>;
+    disconnectSensorAdapter(type: string): Promise<void>;
+    testSensorAdapter(type: string): Promise<void>;
+    updateTelemetryConsent(consent: TelemetryConsentMap, context?: JsonObject): void;
+    getTelemetryConsent(): TelemetryConsentSnapshot;
+    getTelemetryAuditTrail(): TelemetryAuditEntry[];
+    getLicenseCommercializationSummary(): LicenseCommercializationSummary | null;
+    getLicenseCommercializationReporter(): LicenseCommercializationReporter | null;
+    getLicenseCommercializationSnapshotStore(): LicenseCommercializationSnapshotStore | null;
+    captureLicenseCommercializationSnapshot(context?: JsonObject): LicenseCommercializationSnapshot | null;
+    getLicenseCommercializationSnapshots(options?: CommercializationSnapshotQuery): LicenseCommercializationSnapshot[];
+    getLicenseCommercializationKpiReport(options?: CommercializationKpiQuery): LicenseCommercializationKpiReport;
+    exportLicenseCommercializationSnapshots(
+        options?: CommercializationSnapshotExportOptions
+    ): CommercializationSnapshotExportResult | Promise<CommercializationSnapshotExportResult>;
+    startLicenseCommercializationSnapshotSchedule(intervalMs: number, context?: JsonObject): unknown;
+    stopLicenseCommercializationSnapshotSchedule(): AdaptiveInterfaceEngine;
+    setLicense(license: LicensePayload | null): void;
+    validateLicense(context?: JsonObject): Promise<LicenseManagerStatus>;
+    getLicenseStatus(): LicenseManagerStatus;
+    getLicenseHistory(): LicenseManagerStatus[];
+    getLicenseAttestationHistory(): unknown[];
+    composeProjectionField(
+        blueprintOrLayout: unknown,
+        design?: unknown,
+        context?: unknown,
+        options?: JsonObject
+    ): unknown;
+    getProjectionFrame(): unknown;
+    stepProjectionSimulation(options?: JsonObject): unknown;
+    registerProjectionScenario(descriptor: ProjectionScenarioDescriptor): string | ProjectionScenarioDescriptor;
+    registerProjectionScenarioPack(pack: ProjectionScenarioDescriptor | ProjectionScenarioDescriptor[]): unknown;
+    removeProjectionScenario(id: string): boolean;
+    listProjectionScenarios(): ProjectionScenarioDescriptor[];
+    listProjectionScenarioPacks(): ProjectionScenarioDescriptor[];
+    getProjectionScenario(id: string): ProjectionScenarioDescriptor | undefined;
+    getProjectionScenarioPack(id: string): ProjectionScenarioDescriptor | undefined;
+    setActiveProjectionScenario(id: string): void;
+    getActiveProjectionScenario(): ProjectionScenarioDescriptor | null;
+    getProjectionScenarioCatalog(): ProjectionScenarioCatalog;
+    setLicenseAttestor(attestor: LicenseAttestor, options?: JsonObject): void;
+    requestLicenseAttestation(context?: JsonObject): Promise<LicenseManagerStatus>;
+    onLicenseStatusChange(listener: (status: LicenseManagerStatus) => void): () => void;
+    createConsentPanel(options?: Omit<ConsentPanelOptions, 'container'> & { container: HTMLElement }): ConsentPanelInstance;
+    dispose(): void;
+}
+
+export function createAdaptiveSDK(config?: AdaptiveSDKConfig): AdaptiveSDKInstance;
+
+export function createReferenceTelemetryBlueprints(
+    options?: ReferenceTelemetryBlueprintOptions
+): Record<string, TelemetryProviderBlueprint>;
+
+export function registerReferenceTelemetryProviders(
+    harness: ProductTelemetryHarness,
+    options?: ReferenceTelemetryProviderOptions
+): ReferenceTelemetryProviderRegistration;
+

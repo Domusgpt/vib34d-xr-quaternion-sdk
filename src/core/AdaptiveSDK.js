@@ -3,6 +3,59 @@ import { createConsentPanel as baseCreateConsentPanel } from '../ui/components/C
 import { LicenseManager } from '../product/licensing/LicenseManager.js';
 import { RemoteLicenseAttestor } from '../product/licensing/RemoteLicenseAttestor.js';
 import { ShaderQuaternionSynchronizer } from '../ui/adaptive/renderers/ShaderQuaternionSynchronizer.js';
+import { QuaternionPoseRegistry } from '../core/quaternion/registry.ts';
+import { QuaternionPoseRegistrySynchronizer } from '../ui/adaptive/renderers/QuaternionPoseRegistrySynchronizer.ts';
+import { createTelemetryFacade } from '../product/telemetry/createTelemetryFacade.js';
+import { PoseReliabilityMonitor } from '../ui/adaptive/renderers/PoseReliabilityMonitor.ts';
+import { SpatialConsensusModule } from '../ui/adaptive/localization/SpatialConsensusModule.ts';
+
+let poseFrameSequence = 0;
+
+function nextPoseFrameId() {
+    poseFrameSequence = (poseFrameSequence + 1) % 1000000;
+    return `pose-frame-${Date.now().toString(16)}-${poseFrameSequence}`;
+}
+
+function resolvePoseTimestamp(candidate, fallback) {
+    const timestamp = Number(candidate);
+    if (Number.isFinite(timestamp) && timestamp >= 0) {
+        return timestamp;
+    }
+    return fallback;
+}
+
+function normalizePoseSample(sample, timestamp, eventConfidence) {
+    if (!sample || typeof sample !== 'object') {
+        return null;
+    }
+
+    const orientation = sample.orientation || sample.quaternion;
+    if (!orientation) {
+        return null;
+    }
+
+    const position = sample.position || sample.translation || { x: 0, y: 0, z: 0 };
+    const reliability = typeof sample.reliability === 'string' ? sample.reliability : 'estimated';
+    const accuracy = Number.isFinite(sample.accuracy)
+        ? Math.max(0, Math.min(1, sample.accuracy))
+        : (Number.isFinite(eventConfidence) ? Math.max(0, Math.min(1, eventConfidence)) : 0.75);
+
+    return {
+        id: typeof sample.id === 'string' && sample.id ? sample.id : 'headset-primary',
+        role: typeof sample.role === 'string' ? sample.role : 'headset',
+        handedness: typeof sample.handedness === 'string' ? sample.handedness : 'none',
+        timestamp,
+        orientation,
+        position,
+        reliability,
+        accuracy,
+        linearVelocity: sample.linearVelocity || null,
+        angularVelocity: sample.angularVelocity || null,
+        buttons: Array.isArray(sample.buttons) ? sample.buttons : undefined,
+        triggers: Array.isArray(sample.triggers) ? sample.triggers : undefined,
+        joints: Array.isArray(sample.joints) ? sample.joints : undefined
+    };
+}
 
 export function createAdaptiveSDK(config = {}) {
     const telemetryOptions = { ...(config.telemetry || {}) };
@@ -120,6 +173,138 @@ export function createAdaptiveSDK(config = {}) {
         projection: config.projection
     });
 
+    let poseRegistry = null;
+    let poseReliabilityMonitor = null;
+    let spatialConsensus = null;
+    const poseRegistryConfig = config.poseRegistryIngestors || config.poseRegistryIngestion || {};
+    const ingestPoseFrames = poseRegistryConfig.poseFrame !== false;
+    const ingestPoseSamples = poseRegistryConfig.pose !== false;
+    const poseRegistrySubscriptions = [];
+
+    if (config.poseRegistry && typeof config.poseRegistry.ingestFrame === 'function') {
+        poseRegistry = config.poseRegistry;
+    } else if (config.enablePoseRegistry !== false) {
+        poseRegistry = new QuaternionPoseRegistry(config.poseRegistryOptions || {});
+    }
+
+    const poseReliabilityMonitorOptions = config.poseReliabilityMonitor;
+    const poseReliabilityMonitorEnabled = config.enablePoseReliabilityMonitor !== false
+        && poseReliabilityMonitorOptions !== false;
+
+    const spatialConsensusOption = config.spatialConsensus;
+    const spatialConsensusEnabled = config.enableSpatialConsensus !== false;
+    if (spatialConsensusEnabled) {
+        if (spatialConsensusOption instanceof SpatialConsensusModule) {
+            spatialConsensus = spatialConsensusOption;
+        } else {
+            const consensusOptions = typeof spatialConsensusOption === 'object' && spatialConsensusOption
+                ? { ...spatialConsensusOption }
+                : {};
+            if (typeof consensusOptions.timeSource !== 'function') {
+                consensusOptions.timeSource = () => (typeof performance !== 'undefined' && typeof performance.now === 'function'
+                    ? performance.now()
+                    : Date.now());
+            }
+            spatialConsensus = new SpatialConsensusModule(consensusOptions);
+        }
+    }
+
+    const sensoryBridge = engine.sensoryBridge;
+
+    const ingestFrame = frame => {
+        if (!poseRegistry || !frame) {
+            return;
+        }
+
+        try {
+            poseRegistry.ingestFrame(frame);
+        } catch (error) {
+            console.warn('[AdaptiveSDK] Failed to ingest pose frame', error);
+        }
+    };
+
+    if (poseRegistry && sensoryBridge && typeof sensoryBridge.subscribe === 'function') {
+        if (ingestPoseFrames) {
+            const unsubscribePoseFrame = sensoryBridge.subscribe('spatial.pose-frame', event => {
+                const baseTimestamp = typeof event?.timestamp === 'number' ? event.timestamp : Date.now();
+                const payload = event?.payload;
+                if (!payload || typeof payload !== 'object') {
+                    return;
+                }
+
+                const frameTimestamp = resolvePoseTimestamp(payload.timestamp, baseTimestamp);
+                ingestFrame({
+                    frameId: typeof payload.frameId === 'string' && payload.frameId
+                        ? payload.frameId
+                        : nextPoseFrameId(),
+                    timestamp: frameTimestamp,
+                    referenceSpace: typeof payload.referenceSpace === 'string'
+                        ? payload.referenceSpace
+                        : 'local',
+                    head: payload.head,
+                    controllers: Array.isArray(payload.controllers) ? payload.controllers : [],
+                    hands: Array.isArray(payload.hands) ? payload.hands : [],
+                    metadata: payload.metadata || undefined
+                });
+            });
+            poseRegistrySubscriptions.push(unsubscribePoseFrame);
+        }
+
+        if (ingestPoseSamples) {
+            const unsubscribePoseSample = sensoryBridge.subscribe('spatial.pose', event => {
+                const baseTimestamp = typeof event?.timestamp === 'number' ? event.timestamp : Date.now();
+                const pose = normalizePoseSample(event?.payload, baseTimestamp, event?.confidence);
+                if (!pose) {
+                    return;
+                }
+
+                ingestFrame({
+                    frameId: nextPoseFrameId(),
+                    timestamp: resolvePoseTimestamp(pose.timestamp, baseTimestamp),
+                    referenceSpace: typeof event?.payload?.referenceSpace === 'string'
+                        ? event.payload.referenceSpace
+                        : 'local',
+                    head: {
+                        id: pose.id,
+                        role: pose.role,
+                        handedness: pose.handedness,
+                        timestamp: resolvePoseTimestamp(pose.timestamp, baseTimestamp),
+                        orientation: pose.orientation,
+                        position: pose.position,
+                        reliability: pose.reliability,
+                        accuracy: pose.accuracy,
+                        linearVelocity: pose.linearVelocity || undefined,
+                        angularVelocity: pose.angularVelocity || undefined
+                    },
+                    controllers: [],
+                    hands: []
+                });
+            });
+            poseRegistrySubscriptions.push(unsubscribePoseSample);
+        }
+    }
+
+    if (poseRegistry && poseReliabilityMonitorEnabled && engine?.telemetry) {
+        const monitorConfig = typeof poseReliabilityMonitorOptions === 'object' && poseReliabilityMonitorOptions
+            ? poseReliabilityMonitorOptions
+            : {};
+
+        poseReliabilityMonitor = new PoseReliabilityMonitor({
+            registry: poseRegistry,
+            telemetry: engine.telemetry,
+            updateIntervalMs: monitorConfig.updateIntervalMs,
+            staleThresholdMs: monitorConfig.staleThresholdMs,
+            degradedConfidenceThreshold: monitorConfig.degradedConfidenceThreshold,
+            recoveredConfidenceThreshold: monitorConfig.recoveredConfidenceThreshold,
+            roleFilter: monitorConfig.roleFilter,
+            deviceFilter: monitorConfig.deviceFilter,
+            includeRecoveredEvents: monitorConfig.includeRecoveredEvents,
+            autoStart: monitorConfig.autoStart,
+            now: monitorConfig.now,
+            onStateChange: monitorConfig.onStateChange
+        });
+    }
+
     if (licenseManager) {
         engine.telemetry.setLicenseManager(licenseManager);
     }
@@ -188,52 +373,113 @@ export function createAdaptiveSDK(config = {}) {
 
     const defaultConsentOptions = Array.isArray(config.consentOptions) ? config.consentOptions : undefined;
 
+    const telemetryFacade = engine.telemetryFacade || createTelemetryFacade({
+        harness: engine.telemetry,
+        owner: engine,
+        hooks: {
+            onProviderRegistered: provider => {
+                if (provider?.id) {
+                    engine.telemetry.track('design.telemetry.provider_registered', { id: provider.id });
+                }
+            },
+            onProviderRemoved: id => {
+                if (id) {
+                    engine.telemetry.track('design.telemetry.provider_removed', { id });
+                }
+            }
+        }
+    });
+
+    const createShaderSynchronizer = function createShaderSynchronizer(options = {}) {
+        const { systems, systemResolver, ...rest } = options || {};
+        const resolver = typeof systemResolver === 'function'
+            ? systemResolver
+            : (name => {
+                if (systems && systems[name]) {
+                    return systems[name];
+                }
+                if (typeof engine?.getVisualSystem === 'function') {
+                    const resolved = engine.getVisualSystem(name);
+                    if (resolved) {
+                        return resolved;
+                    }
+                }
+                if (typeof window !== 'undefined' && window?.systemManager?.systems instanceof Map) {
+                    return window.systemManager.systems.get(name) || null;
+                }
+                return null;
+            });
+
+        return new ShaderQuaternionSynchronizer({
+            bridge: sensoryBridge,
+            systemResolver: resolver,
+            ...rest
+        });
+    };
+
+    const createPoseRegistrySynchronizer = function createPoseRegistrySynchronizer(options = {}) {
+        const { registry: explicitRegistry, synchronizer, synchronizerOptions, ...rest } = options || {};
+        const activeRegistry = explicitRegistry || poseRegistry;
+        if (!activeRegistry) {
+            throw new Error('No QuaternionPoseRegistry configured. Pass a registry explicitly or enable the default instance.');
+        }
+
+        const activeSynchronizer = synchronizer
+            || (synchronizerOptions
+                ? new ShaderQuaternionSynchronizer({
+                    bridge: sensoryBridge,
+                    ...synchronizerOptions
+                })
+                : createShaderSynchronizer());
+
+        return new QuaternionPoseRegistrySynchronizer({
+            registry: activeRegistry,
+            synchronizer: activeSynchronizer,
+            ...rest
+        });
+    };
+
     return {
         engine,
-        sensoryBridge: engine.sensoryBridge,
+        sensoryBridge,
         layoutSynthesizer: engine.layoutSynthesizer,
         telemetry: engine.telemetry,
+        telemetryControls: telemetryFacade,
         projectionComposer: engine.projectionComposer,
         projectionSimulator: engine.projectionSimulator,
         licenseManager,
         licenseAttestor,
         ShaderQuaternionSynchronizer,
+        QuaternionPoseRegistry,
+        QuaternionPoseRegistrySynchronizer,
+        poseRegistry,
+        poseReliabilityMonitor,
+        spatialConsensus,
         createShaderQuaternionSynchronizer(options = {}) {
-            const { systems, systemResolver, ...rest } = options || {};
-            const resolver = typeof systemResolver === 'function'
-                ? systemResolver
-                : (name => {
-                    if (systems && systems[name]) {
-                        return systems[name];
-                    }
-                    if (typeof engine?.getVisualSystem === 'function') {
-                        const resolved = engine.getVisualSystem(name);
-                        if (resolved) {
-                            return resolved;
-                        }
-                    }
-                    if (typeof window !== 'undefined' && window?.systemManager?.systems instanceof Map) {
-                        return window.systemManager.systems.get(name) || null;
-                    }
-                    return null;
-                });
-
-            return new ShaderQuaternionSynchronizer({
-                bridge: engine.sensoryBridge,
-                systemResolver: resolver,
-                ...rest
-            });
+            return createShaderSynchronizer(options);
+        },
+        createQuaternionPoseRegistrySynchronizer(options = {}) {
+            return createPoseRegistrySynchronizer(options);
+        },
+        createSpatialConsensusModule(options = {}) {
+            const consensusOptions = { ...options };
+            if (typeof consensusOptions.timeSource !== 'function') {
+                consensusOptions.timeSource = () => (typeof performance !== 'undefined' && typeof performance.now === 'function'
+                    ? performance.now()
+                    : Date.now());
+            }
+            return new SpatialConsensusModule(consensusOptions);
         },
         registerLayoutStrategy: engine.registerLayoutStrategy.bind(engine),
         registerLayoutAnnotation: engine.registerLayoutAnnotation.bind(engine),
-        registerTelemetryProvider: engine.registerTelemetryProvider.bind(engine),
-        registerTelemetryRequestMiddleware: engine.registerTelemetryRequestMiddleware.bind(engine),
-        clearTelemetryRequestMiddleware: engine.clearTelemetryRequestMiddleware.bind(engine),
-        registerLicenseAttestationProfile: engine.registerLicenseAttestationProfile.bind(engine),
-        registerLicenseAttestationProfilePack: engine.registerLicenseAttestationProfilePack.bind(engine),
-        getLicenseAttestationProfiles: engine.telemetry.getLicenseAttestationProfiles.bind(engine.telemetry),
-        getLicenseAttestationProfile: engine.telemetry.getLicenseAttestationProfile.bind(engine.telemetry),
-        setDefaultLicenseAttestationProfile: engine.setDefaultLicenseAttestationProfile.bind(engine),
+        registerTelemetryProvider: telemetryFacade.registerProvider,
+        registerTelemetryRequestMiddleware: telemetryFacade.registerRequestMiddleware,
+        clearTelemetryRequestMiddleware: telemetryFacade.clearRequestMiddleware,
+        registerLicenseAttestationProfile: telemetryFacade.registerLicenseAttestationProfile,
+        registerLicenseAttestationProfilePack: telemetryFacade.registerLicenseAttestationProfilePack,
+        getLicenseAttestationProfiles: telemetryFacade.getLicenseAttestationProfiles,
+        getLicenseAttestationProfile: telemetryFacade.getLicenseAttestationProfile,
+        setDefaultLicenseAttestationProfile: telemetryFacade.setDefaultLicenseAttestationProfile,
         setLicenseAttestorFromProfile(profileId, overrides = {}) {
             const result = engine.applyLicenseAttestationProfile(profileId, overrides);
             if (result?.attestor) {
@@ -250,16 +496,16 @@ export function createAdaptiveSDK(config = {}) {
         testSensorAdapter: engine.testSensorAdapter.bind(engine),
         updateTelemetryConsent: engine.telemetry.updateConsent.bind(engine.telemetry),
         getTelemetryConsent: engine.telemetry.getConsentSnapshot.bind(engine.telemetry),
-        getTelemetryAuditTrail: engine.getTelemetryAuditTrail.bind(engine),
-        getLicenseCommercializationSummary: engine.getLicenseCommercializationSummary.bind(engine),
-        getLicenseCommercializationReporter: engine.getLicenseCommercializationReporter.bind(engine),
-        getLicenseCommercializationSnapshotStore: engine.getLicenseCommercializationSnapshotStore.bind(engine),
-        captureLicenseCommercializationSnapshot: engine.captureLicenseCommercializationSnapshot.bind(engine),
-        getLicenseCommercializationSnapshots: engine.getLicenseCommercializationSnapshots.bind(engine),
-        getLicenseCommercializationKpiReport: engine.getLicenseCommercializationKpiReport.bind(engine),
-        exportLicenseCommercializationSnapshots: engine.exportLicenseCommercializationSnapshots.bind(engine),
-        startLicenseCommercializationSnapshotSchedule: engine.startLicenseCommercializationSnapshotSchedule.bind(engine),
-        stopLicenseCommercializationSnapshotSchedule: engine.stopLicenseCommercializationSnapshotSchedule.bind(engine),
+        getTelemetryAuditTrail: telemetryFacade.getAuditTrail,
+        getLicenseCommercializationSummary: telemetryFacade.getCommercializationSummary,
+        getLicenseCommercializationReporter: telemetryFacade.getCommercializationReporter,
+        getLicenseCommercializationSnapshotStore: telemetryFacade.getCommercializationSnapshotStore,
+        captureLicenseCommercializationSnapshot: telemetryFacade.captureCommercializationSnapshot,
+        getLicenseCommercializationSnapshots: telemetryFacade.getCommercializationSnapshots,
+        getLicenseCommercializationKpiReport: telemetryFacade.getCommercializationKpiReport,
+        exportLicenseCommercializationSnapshots: telemetryFacade.exportCommercializationSnapshots,
+        startLicenseCommercializationSnapshotSchedule: telemetryFacade.startCommercializationSnapshotSchedule,
+        stopLicenseCommercializationSnapshotSchedule: telemetryFacade.stopCommercializationSnapshotSchedule,
         setLicense(license) {
             if (!licenseManager) {
                 throw new Error('No license manager configured for this SDK instance.');
@@ -359,6 +605,17 @@ export function createAdaptiveSDK(config = {}) {
                 ...options,
                 consentOptions
             });
+        },
+        dispose() {
+            while (poseRegistrySubscriptions.length > 0) {
+                try {
+                    poseRegistrySubscriptions.pop()?.();
+                } catch (error) {
+                    console.warn('[AdaptiveSDK] Failed to remove pose registry subscription', error);
+                }
+            }
+            poseReliabilityMonitor?.dispose?.();
+            engine.dispose?.();
         }
     };
 }
