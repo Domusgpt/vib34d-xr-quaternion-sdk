@@ -1,4 +1,5 @@
-import GlassUniformController from './GlassUniformController.ts';
+import GlassUniformController, { type LocalizationTelemetry } from './GlassUniformController.ts';
+import type { LocalizationFrameInput } from '../localization/LocalizationBridge.ts';
 import type { AudioBands, VisualParameterVector, XRFrameLike, XRViewLike, XRViewerPoseLike } from './WebXRQuaternionBridge.ts';
 import { MultiLayerGlassComposer } from './MultiLayerGlassComposer.ts';
 import {
@@ -115,6 +116,7 @@ export class WebXRGlassSession {
   private lastFrameSeconds: number | null = null;
   private fpsAccumulator = 0;
   private fpsFrames = 0;
+  private localizationTelemetry: LocalizationTelemetry | null = null;
 
   private readonly viewTargets = new Map<number, ViewTargets>();
   private readonly hasBlurLayers: boolean;
@@ -145,6 +147,9 @@ export class WebXRGlassSession {
     this.audioOverride = options.audioOverride;
     this.visualOverride = options.visualOverride;
     this.hasBlurLayers = this.composer.layers.some(layer => (layer.blurRadius ?? 0) > 0);
+    this.localizationTelemetry = typeof this.controller.getLocalizationTelemetry === 'function'
+      ? this.controller.getLocalizationTelemetry()
+      : null;
   }
 
   get runningSession(): XRSessionLike | null {
@@ -158,6 +163,25 @@ export class WebXRGlassSession {
         ? this.controller.listLocalizationRisks()
         : []),
     ];
+  }
+
+  ingestLocalizationFrame(frame: LocalizationFrameInput): void {
+    const result = this.controller.ingestLocalizationFrame(frame);
+    if (typeof this.controller.getLocalizationTelemetry === 'function') {
+      this.localizationTelemetry = this.controller.getLocalizationTelemetry();
+    } else {
+      this.localizationTelemetry = {
+        snapshot: result.snapshot,
+        channel: result.channel,
+        summary: null,
+        fusion: null,
+        prediction: null,
+      };
+    }
+  }
+
+  getLocalizationTelemetry(): LocalizationTelemetry | null {
+    return this.localizationTelemetry;
   }
 
   async start(): Promise<void> {
@@ -272,6 +296,9 @@ export class WebXRGlassSession {
         audioOverride: this.audioOverride,
         visualOverride: this.visualOverride,
       });
+      if (typeof this.controller.getLocalizationTelemetry === 'function') {
+        this.localizationTelemetry = this.controller.getLocalizationTelemetry();
+      }
     } catch (error) {
       this.logger?.warn?.('[WebXRGlassSession] Failed to update uniforms', error);
       this.scheduleFrame();
