@@ -585,6 +585,15 @@ export class PolychoraSystem {
             magneticField: 0.0,       // Magnetic field strength
             fluidFlow: 0.5,          // Fluid current strength
         };
+
+        this.rotorState = {
+            xy: this.parameters.rot4dXY,
+            xz: this.parameters.rot4dXZ,
+            yz: this.parameters.rot4dYZ,
+            xw: this.parameters.rot4dXW,
+            yw: this.parameters.rot4dYW,
+            zw: this.parameters.rot4dZW
+        };
         
         // Layer-specific configurations for glassmorphic effects
         this.layerConfigs = {
@@ -631,7 +640,7 @@ export class PolychoraSystem {
      */
     initialize() {
         console.log('🔮 Initializing Polychora System');
-        
+
         this.canvasContainer = document.getElementById('polychoraLayers');
         if (!this.canvasContainer) {
             console.error('❌ Polychora canvas container not found');
@@ -758,7 +767,61 @@ export class PolychoraSystem {
         };
         render();
     }
-    
+
+    getRotorState() {
+        return { ...this.rotorState };
+    }
+
+    applyRotorState(rotor) {
+        if (!rotor) return;
+        const candidate = Array.isArray(rotor)
+            ? {
+                xy: rotor[0],
+                xz: rotor[1],
+                yz: rotor[2],
+                xw: rotor[3],
+                yw: rotor[4],
+                zw: rotor[5]
+            }
+            : rotor;
+
+        const nextState = {
+            xy: Number(candidate.xy ?? candidate.xY ?? this.rotorState.xy) || 0,
+            xz: Number(candidate.xz ?? candidate.xZ ?? this.rotorState.xz) || 0,
+            yz: Number(candidate.yz ?? candidate.yZ ?? this.rotorState.yz) || 0,
+            xw: Number(candidate.xw ?? candidate.xW ?? this.rotorState.xw) || 0,
+            yw: Number(candidate.yw ?? candidate.yW ?? this.rotorState.yw) || 0,
+            zw: Number(candidate.zw ?? candidate.zW ?? this.rotorState.zw) || 0
+        };
+
+        this.rotorState = nextState;
+        this.parameters.rot4dXY = nextState.xy;
+        this.parameters.rot4dXZ = nextState.xz;
+        this.parameters.rot4dYZ = nextState.yz;
+        this.parameters.rot4dXW = nextState.xw;
+        this.parameters.rot4dYW = nextState.yw;
+        this.parameters.rot4dZW = nextState.zw;
+    }
+
+    setRotorState(rotor) {
+        this.applyRotorState(rotor);
+    }
+
+    setQuaternionRotation(quaternion) {
+        if (!quaternion) return;
+        const normalized = normalizeQuaternion(quaternion);
+        const { axis, angle } = toAxisAngle(normalized);
+        const rotor4d = deriveRotorSnapshot(normalized).rotor4d;
+        this.applyRotorState({
+            xy: axis[2] * angle,
+            xz: -axis[1] * angle,
+            yz: axis[0] * angle,
+            xw: rotor4d[0],
+            yw: rotor4d[1],
+            zw: rotor4d[2]
+        });
+    }
+
     /**
      * Enable/disable 4D physics simulation
      */
@@ -840,12 +903,7 @@ export class PolychoraSystem {
             // Update rotation based on physics body rotations
             const primaryBody = physicsFeedback[this.parameters.polytope] || physicsFeedback[0];
             if (primaryBody) {
-                this.parameters.rot4dXY = primaryBody.rotation[0];
-                this.parameters.rot4dXZ = primaryBody.rotation[1];
-                this.parameters.rot4dYZ = primaryBody.rotation[2];
-                this.parameters.rot4dXW = primaryBody.rotation[3];
-                this.parameters.rot4dYW = primaryBody.rotation[4];
-                this.parameters.rot4dZW = primaryBody.rotation[5];
+                this.applyRotorState(primaryBody.rotation);
             }
         }
     }
@@ -1058,3 +1116,8 @@ export class PolychoraSystem {
         console.log('🔮 Polychora System destroyed');
     }
 }
+import {
+    deriveRotorSnapshot,
+    normalize as normalizeQuaternion,
+    toAxisAngle
+} from './quaternion/index.ts';

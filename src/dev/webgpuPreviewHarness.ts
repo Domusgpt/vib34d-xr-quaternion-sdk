@@ -5,7 +5,7 @@ import {
 } from '../ui/adaptive/renderers/webgpu/MultiLayerGlassComposer.ts';
 import { WebXRQuaternionBridge, type AudioBands, type VisualParameterVector, type XRFrameLike } from '../ui/adaptive/renderers/webgpu/WebXRQuaternionBridge.ts';
 import { normalize as normalizeQuaternionTuple, type Quaternion } from '../core/quaternion/index.ts';
-import GlassUniformController from '../ui/adaptive/renderers/webgpu/GlassUniformController.ts';
+import GlassUniformController, { type LocalizationTelemetry } from '../ui/adaptive/renderers/webgpu/GlassUniformController.ts';
 import type { StoryTriggerActivation } from '../ui/adaptive/localization/SpatialStoryGraph.ts';
 import {
   createGlassPipelines,
@@ -254,6 +254,7 @@ export class WebGPUPreviewHarness {
   private readonly layerShaderOverride?: string;
   private readonly layerShaderOverrides?: readonly string[];
   private readonly layerShaderCodes: string[] = [];
+  private localizationTelemetry: LocalizationTelemetry | null = null;
 
   private readonly uniformBindGroupLayout: unknown;
   private readonly layerBindGroupLayout: unknown;
@@ -309,6 +310,7 @@ export class WebGPUPreviewHarness {
     this.controller.setAudioBands(this.state.audio);
     this.controller.setVisualParams(this.state.visual);
     this.controller.setConfidence(this.state.confidence);
+    this.localizationTelemetry = this.controller.getLocalizationTelemetry();
 
     const pipelines = createGlassPipelines({
       device: this.device,
@@ -514,6 +516,10 @@ export class WebGPUPreviewHarness {
     return this.controller.listStoryActivations();
   }
 
+  getLocalizationTelemetry(): LocalizationTelemetry {
+    return this.localizationTelemetry ?? this.controller.getLocalizationTelemetry();
+  }
+
   getPredictionSnapshot(): { confidence: number; horizonMs: number; rotor: readonly [number, number, number] } | null {
     const prediction = this.controller.getLastPrediction();
     if (!prediction) {
@@ -652,6 +658,7 @@ export class WebGPUPreviewHarness {
       drift,
       anchor: { id: 'preview-stage', accuracy: stageAccuracy * 0.9 }
     });
+    this.localizationTelemetry = this.controller.getLocalizationTelemetry();
 
     this.controller.ingestLocalizationFrame({
       source: 'spatial-anchor',
@@ -667,6 +674,7 @@ export class WebGPUPreviewHarness {
       },
       drift: drift * 0.75
     });
+    this.localizationTelemetry = this.controller.getLocalizationTelemetry();
 
     const frame = createMockXRFrame({
       quaternion,
@@ -682,6 +690,7 @@ export class WebGPUPreviewHarness {
       deltaTime,
       quaternionOverride: quaternion
     });
+    this.localizationTelemetry = this.controller.getLocalizationTelemetry();
   }
 
   private renderFrame(): void {

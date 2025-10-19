@@ -11,8 +11,11 @@ export class ParameterManager {
             variation: 0,
             
             // 4D Polytopal Mathematics
+            rot4dXY: 0.0,      // X-Y plane rotation (-2 to 2)
+            rot4dXZ: 0.0,      // X-Z plane rotation (-2 to 2)
+            rot4dYZ: 0.0,      // Y-Z plane rotation (-2 to 2)
             rot4dXW: 0.0,      // X-W plane rotation (-2 to 2)
-            rot4dYW: 0.0,      // Y-W plane rotation (-2 to 2) 
+            rot4dYW: 0.0,      // Y-W plane rotation (-2 to 2)
             rot4dZW: 0.0,      // Z-W plane rotation (-2 to 2)
             dimension: 3.5,    // Dimensional level (3.0 to 4.5)
             
@@ -32,6 +35,9 @@ export class ParameterManager {
         // Parameter definitions for validation and UI
         this.parameterDefs = {
             variation: { min: 0, max: 99, step: 1, type: 'int' },
+            rot4dXY: { min: -2, max: 2, step: 0.01, type: 'float' },
+            rot4dXZ: { min: -2, max: 2, step: 0.01, type: 'float' },
+            rot4dYZ: { min: -2, max: 2, step: 0.01, type: 'float' },
             rot4dXW: { min: -2, max: 2, step: 0.01, type: 'float' },
             rot4dYW: { min: -2, max: 2, step: 0.01, type: 'float' },
             rot4dZW: { min: -2, max: 2, step: 0.01, type: 'float' },
@@ -108,7 +114,7 @@ export class ParameterManager {
      */
     updateFromControls() {
         const controlIds = [
-            'variationSlider', 'rot4dXW', 'rot4dYW', 'rot4dZW', 'dimension',
+            'variationSlider', 'rot4dXY', 'rot4dXZ', 'rot4dYZ', 'rot4dXW', 'rot4dYW', 'rot4dZW', 'dimension',
             'gridDensity', 'morphFactor', 'chaos', 'speed', 'hue'
         ];
         
@@ -134,6 +140,9 @@ export class ParameterManager {
     updateDisplayValues() {
         // Update slider values
         this.updateSliderValue('variationSlider', this.params.variation);
+        this.updateSliderValue('rot4dXY', this.params.rot4dXY);
+        this.updateSliderValue('rot4dXZ', this.params.rot4dXZ);
+        this.updateSliderValue('rot4dYZ', this.params.rot4dYZ);
         this.updateSliderValue('rot4dXW', this.params.rot4dXW);
         this.updateSliderValue('rot4dYW', this.params.rot4dYW);
         this.updateSliderValue('rot4dZW', this.params.rot4dZW);
@@ -145,6 +154,9 @@ export class ParameterManager {
         this.updateSliderValue('hue', this.params.hue);
         
         // Update display texts
+        this.updateDisplayText('rot4dXYDisplay', this.params.rot4dXY.toFixed(2));
+        this.updateDisplayText('rot4dXZDisplay', this.params.rot4dXZ.toFixed(2));
+        this.updateDisplayText('rot4dYZDisplay', this.params.rot4dYZ.toFixed(2));
         this.updateDisplayText('rot4dXWDisplay', this.params.rot4dXW.toFixed(2));
         this.updateDisplayText('rot4dYWDisplay', this.params.rot4dYW.toFixed(2));
         this.updateDisplayText('rot4dZWDisplay', this.params.rot4dZW.toFixed(2));
@@ -206,6 +218,9 @@ export class ParameterManager {
      * Randomize all parameters
      */
     randomizeAll() {
+        this.params.rot4dXY = Math.random() * 4 - 2;
+        this.params.rot4dXZ = Math.random() * 4 - 2;
+        this.params.rot4dYZ = Math.random() * 4 - 2;
         this.params.rot4dXW = Math.random() * 4 - 2;
         this.params.rot4dYW = Math.random() * 4 - 2;
         this.params.rot4dZW = Math.random() * 4 - 2;
@@ -270,6 +285,9 @@ export class ParameterManager {
                 chaos: level * 0.15,
                 speed: 0.8 + (level * 0.2),
                 hue: (geometryType * 45 + level * 15) % 360,
+                rot4dXY: (geometryType % 3 - 1) * 0.35,
+                rot4dXZ: (level - 1.5) * 0.45,
+                rot4dYZ: ((geometryType + level) % 2 ? 0.25 : -0.25),
                 rot4dXW: (level - 1.5) * 0.5,
                 rot4dYW: (geometryType % 2) * 0.3,
                 rot4dZW: ((geometryType + level) % 3) * 0.2,

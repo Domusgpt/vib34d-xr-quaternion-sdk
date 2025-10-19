@@ -11,14 +11,19 @@
 import {
     IDENTITY_QUATERNION,
     conjugate as conjugateQuaternion,
+    deriveRotorSnapshot,
     multiply as multiplyQuaternion,
-    normalize as normalizeQuaternionTuple
+    normalize as normalizeQuaternionTuple,
+    toAxisAngle
 } from '../../../core/quaternion/index.ts';
 
 const ROTATION_LIMIT = 6.28; // ±2π rad slider range
 const DEG_PER_RAD = 180 / Math.PI;
 
 const PARAM_LIMITS = {
+    rot4dXY: { min: -ROTATION_LIMIT, max: ROTATION_LIMIT },
+    rot4dXZ: { min: -ROTATION_LIMIT, max: ROTATION_LIMIT },
+    rot4dYZ: { min: -ROTATION_LIMIT, max: ROTATION_LIMIT },
     rot4dXW: { min: -ROTATION_LIMIT, max: ROTATION_LIMIT },
     rot4dYW: { min: -ROTATION_LIMIT, max: ROTATION_LIMIT },
     rot4dZW: { min: -ROTATION_LIMIT, max: ROTATION_LIMIT },
@@ -253,11 +258,25 @@ export class ShaderQuaternionSynchronizer {
         }
 
         const euler = this.quaternionToEuler(normalized);
+        const rotorSnapshot = deriveRotorSnapshot(normalized);
+        const { axis, angle } = toAxisAngle(normalized);
+
         const rotationTarget = {
-            rot4dXW: this.clampNumber(euler.pitch * this.rotationScale, PARAM_LIMITS.rot4dXW),
-            rot4dYW: this.clampNumber(euler.yaw * this.rotationScale, PARAM_LIMITS.rot4dYW),
-            rot4dZW: this.clampNumber(euler.roll * this.rotationScale, PARAM_LIMITS.rot4dZW)
+            rot4dXY: this.clampNumber(axis[2] * angle * this.rotationScale * 0.5, PARAM_LIMITS.rot4dXY),
+            rot4dXZ: this.clampNumber(-axis[1] * angle * this.rotationScale * 0.5, PARAM_LIMITS.rot4dXZ),
+            rot4dYZ: this.clampNumber(axis[0] * angle * this.rotationScale * 0.5, PARAM_LIMITS.rot4dYZ),
+            rot4dXW: this.clampNumber(rotorSnapshot.rotor4d[0] * this.rotationScale, PARAM_LIMITS.rot4dXW),
+            rot4dYW: this.clampNumber(rotorSnapshot.rotor4d[1] * this.rotationScale, PARAM_LIMITS.rot4dYW),
+            rot4dZW: this.clampNumber(rotorSnapshot.rotor4d[2] * this.rotationScale, PARAM_LIMITS.rot4dZW)
         };
+
+        if (typeof window !== 'undefined' && window.canvasManager?.updateQuaternionRotor) {
+            try {
+                window.canvasManager.updateQuaternionRotor(rotationTarget);
+            } catch (error) {
+                this.logger?.warn?.('[ShaderQuaternionSynchronizer] failed to broadcast rotor state', error);
+            }
+        }
 
         const motionEnergy = this.computeMotionEnergy(normalized, timestamp);
         if (this.targetSystems.size === 0) {
@@ -275,6 +294,9 @@ export class ShaderQuaternionSynchronizer {
             return;
         }
 
+        this.applyParameter(systemName, system, 'rot4dXY', rotationTarget.rot4dXY, confidence);
+        this.applyParameter(systemName, system, 'rot4dXZ', rotationTarget.rot4dXZ, confidence);
+        this.applyParameter(systemName, system, 'rot4dYZ', rotationTarget.rot4dYZ, confidence);
         this.applyParameter(systemName, system, 'rot4dXW', rotationTarget.rot4dXW, confidence);
         this.applyParameter(systemName, system, 'rot4dYW', rotationTarget.rot4dYW, confidence);
         this.applyParameter(systemName, system, 'rot4dZW', rotationTarget.rot4dZW, confidence);
