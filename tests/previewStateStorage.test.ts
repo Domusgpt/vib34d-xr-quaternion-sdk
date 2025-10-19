@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 import {
   PREVIEW_STORAGE_KEY,
   PREVIEW_STORAGE_VERSION,
+  DEFAULT_PREVIEW_ROTOR_STATE,
   createPreviewStateStorage,
   parsePreviewState,
+  sanitizePreviewRotorState,
   stringifyPreviewState,
   type PreviewStatePayload,
   type StorageLike,
@@ -55,6 +57,14 @@ describe('previewStateStorage', () => {
         },
       },
     ],
+    rotor: {
+      xy: 0.5,
+      xz: -0.25,
+      yz: 0.1,
+      xw: 0.9,
+      yw: -0.4,
+      zw: 0.32,
+    },
   };
 
   it('returns null when storage is unavailable', () => {
@@ -120,5 +130,25 @@ describe('previewStateStorage', () => {
     expect(parsePreviewState(serialized)).toEqual(sampleState);
     expect(parsePreviewState('')).toBeNull();
     expect(parsePreviewState('{"version":0}')).toBeNull();
+  });
+
+  it('upgrades legacy payloads that omit rotor fields', () => {
+    const legacyState = {
+      ...sampleState,
+      rotor: undefined,
+    } as unknown as PreviewStatePayload;
+    const serialized = JSON.stringify(legacyState);
+    const parsed = parsePreviewState(serialized);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.rotor).toEqual(DEFAULT_PREVIEW_ROTOR_STATE);
+  });
+
+  it('sanitizes rotor payloads when stringifying', () => {
+    const dirtyState = {
+      ...sampleState,
+      rotor: sanitizePreviewRotorState({ xy: '1.2' as unknown as number }),
+    };
+    const serialized = stringifyPreviewState(dirtyState);
+    expect(serialized).toContain('"xy":1.2');
   });
 });

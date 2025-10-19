@@ -111,13 +111,21 @@ export function createAdaptiveSDK(config = {}) {
         telemetryOptions.licenseAttestorBinding = licenseAttestorBindingOptions;
     }
 
+    const localizationOptions = { ...(config.localization || {}) };
+    if (config.quaternionRegistry) {
+        localizationOptions.quaternion = config.quaternionRegistry;
+    } else if (config.localizationQuaternionRegistry) {
+        localizationOptions.quaternion = config.localizationQuaternionRegistry;
+    }
+
     const engine = new AdaptiveInterfaceEngine({
         sensory: config.sensory,
         layout: config.layout,
         design: config.design,
         telemetry: telemetryOptions,
         marketplaceHooks: config.marketplaceHooks,
-        projection: config.projection
+        projection: config.projection,
+        localization: localizationOptions
     });
 
     if (licenseManager) {
@@ -329,6 +337,12 @@ export function createAdaptiveSDK(config = {}) {
         getProjectionScenarioCatalog() {
             return engine.getProjectionScenarioCatalog();
         },
+        ingestQuaternionFrame: engine.ingestQuaternionFrame.bind(engine),
+        getQuaternionRegistry: engine.getQuaternionRegistry.bind(engine),
+        getQuaternionDevices: engine.getQuaternionDevices.bind(engine),
+        getQuaternionDevice: engine.getQuaternionDevice.bind(engine),
+        getQuaternionRotor: engine.getQuaternionRotor.bind(engine),
+        getQuaternionMatrix: engine.getQuaternionMatrix.bind(engine),
         setLicenseAttestor(attestor, options = {}) {
             if (attestor && typeof attestor.createValidator !== 'function' && typeof attestor.bindToLicenseManager !== 'function') {
                 throw new Error('Invalid license attestor provided.');
