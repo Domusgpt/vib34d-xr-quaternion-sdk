@@ -27,6 +27,16 @@ npx serve -p 8080
 open http://localhost:8080
 ```
 
+> **Preview tip:** `pnpm dev:web` boots the Vite-powered quaternion preview harness. Append query parameters such as `?system=polychora&preset=aurora-cascade&yaw=45&pitch=12&roll=-18` to pre-select a visualization engine, Storybook preset, or initial camera angles.
+
+## 🧭 Phase 3 Visualization Recap
+
+Phase 3 unified our visualization lifecycle, renderer defaults, and tooling surface so partners can exercise every engine without bespoke wiring:
+
+- **Lifecycle helper.** `registerCanvasLifecycle` wraps the shared `CanvasManager` registration flow and guarantees each system tears down listeners cleanly. Engines call the helper during construction so focus/blur and resize activity stays synchronized.【F:src/core/registerCanvasLifecycle.js†L1-L17】【F:src/quantum/QuantumEngine.js†L9-L39】
+- **Renderer defaults.** Glass materials, WebGPU/WebGL palette values, and blur resources are now centralized. The pipeline factory caches compiled programs and the blur helper reuses bind groups to eliminate redundant GPU work while keeping fallbacks visually aligned.【F:src/ui/adaptive/renderers/webgpu/GlassPipelineFactory.ts†L1-L86】【F:src/ui/adaptive/renderers/webgpu/LayerBlurHelper.ts†L1-L86】
+- **Preview tooling.** The quaternion preview and Storybook controls expose the Polychora engine, rotor overrides, and cross-platform launch scripts so designers can validate presets alongside the runtime lifecycle bridge.【F:src/dev/quaternionPreview.ts†L1-L180】【F:src/stories/QuaternionPreview.stories.ts†L1-L90】
+
 ### Project Structure
 ```
 vib34d-ultimate-viewer/
@@ -143,6 +153,9 @@ const paramManager = new ParameterManager();
 // Core parameters
 const defaultParams = {
     geometry: 0,            // 0-7 geometry types
+    rot4dXY: 0.0,          // -6.28 to 6.28 radians
+    rot4dXZ: 0.0,          // -6.28 to 6.28 radians
+    rot4dYZ: 0.0,          // -6.28 to 6.28 radians
     rot4dXW: 0.0,          // -6.28 to 6.28 radians
     rot4dYW: 0.0,          // -6.28 to 6.28 radians
     rot4dZW: 0.0,          // -6.28 to 6.28 radians

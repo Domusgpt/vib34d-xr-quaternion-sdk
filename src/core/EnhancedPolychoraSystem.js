@@ -1,4 +1,9 @@
 // src/core/EnhancedPolychoraSystem.js
+import {
+  deriveRotorSnapshot,
+  normalize as normalizeQuaternion,
+  toAxisAngle
+} from './quaternion/index.ts';
 class EnhancedPolychoraSystem {
   constructor(gl, canvasManager) {
     this.gl = gl;
@@ -24,6 +29,15 @@ class EnhancedPolychoraSystem {
       quantumParticleSize: 0.2,
       viewDistance4D: 3.0,
       complexity: 1.0
+    };
+
+    this.rotorState = {
+      xy: 0,
+      xz: 0,
+      yz: 0,
+      xw: 0,
+      yw: 0,
+      zw: 0
     };
     
     this.initializeShaders();
@@ -307,6 +321,53 @@ class EnhancedPolychoraSystem {
     this.polytopes.set('120-cell', this.create120Cell());
     this.polytopes.set('600-cell', this.create600Cell());
     this.polytopes.set('5-cell', this.create5Cell());
+  }
+
+  getRotorState() {
+    return { ...this.rotorState };
+  }
+
+  applyRotorState(rotor) {
+    if (!rotor) return;
+    const candidate = Array.isArray(rotor)
+      ? { xy: rotor[0], xz: rotor[1], yz: rotor[2], xw: rotor[3], yw: rotor[4], zw: rotor[5] }
+      : rotor;
+
+    const next = {
+      xy: Number(candidate.xy ?? candidate.xY ?? this.rotorState.xy) || 0,
+      xz: Number(candidate.xz ?? candidate.xZ ?? this.rotorState.xz) || 0,
+      yz: Number(candidate.yz ?? candidate.yZ ?? this.rotorState.yz) || 0,
+      xw: Number(candidate.xw ?? candidate.xW ?? this.rotorState.xw) || 0,
+      yw: Number(candidate.yw ?? candidate.yW ?? this.rotorState.yw) || 0,
+      zw: Number(candidate.zw ?? candidate.zW ?? this.rotorState.zw) || 0
+    };
+
+    this.rotorState = next;
+    this.rotationAngles.XY = next.xy;
+    this.rotationAngles.XZ = next.xz;
+    this.rotationAngles.YZ = next.yz;
+    this.rotationAngles.XW = next.xw;
+    this.rotationAngles.YW = next.yw;
+    this.rotationAngles.ZW = next.zw;
+  }
+
+  setRotorState(rotor) {
+    this.applyRotorState(rotor);
+  }
+
+  setQuaternionRotation(quaternion) {
+    if (!quaternion) return;
+    const normalized = normalizeQuaternion(quaternion);
+    const { axis, angle } = toAxisAngle(normalized);
+    const rotor4d = deriveRotorSnapshot(normalized).rotor4d;
+    this.applyRotorState({
+      xy: axis[2] * angle,
+      xz: -axis[1] * angle,
+      yz: axis[0] * angle,
+      xw: rotor4d[0],
+      yw: rotor4d[1],
+      zw: rotor4d[2]
+    });
   }
 
   createTesseract() {

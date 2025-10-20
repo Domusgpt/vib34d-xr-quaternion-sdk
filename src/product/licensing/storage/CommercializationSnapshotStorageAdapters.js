@@ -77,7 +77,7 @@ export function createCommercializationSnapshotRemoteStorage(options = {}) {
     const {
         adapter,
         includeSummary = true,
-        redactContextKeys = [],
+        redactContextKeys = ['licenseKey'],
         transformSnapshot,
         transformIncoming,
         onError
@@ -87,12 +87,16 @@ export function createCommercializationSnapshotRemoteStorage(options = {}) {
         throw new Error('[createCommercializationSnapshotRemoteStorage] `adapter` with a write method is required.');
     }
 
+    const redactionKeys = Array.isArray(redactContextKeys)
+        ? Array.from(new Set(['licenseKey', ...redactContextKeys]))
+        : ['licenseKey'];
+
     const outgoingTransform = typeof transformSnapshot === 'function'
-        ? snapshot => transformSnapshot(snapshot, { includeSummary, redactContextKeys: [...redactContextKeys] })
-        : createSnapshotTransformer({ includeSummary, redactContextKeys });
+        ? snapshot => transformSnapshot(snapshot, { includeSummary, redactContextKeys: [...redactionKeys] })
+        : createSnapshotTransformer({ includeSummary, redactContextKeys: redactionKeys });
 
     const incomingTransform = typeof transformIncoming === 'function'
-        ? records => transformIncoming(records, { includeSummary, redactContextKeys: [...redactContextKeys] })
+        ? records => transformIncoming(records, { includeSummary, redactContextKeys: [...redactionKeys] })
         : records => ensureSnapshotsArray(records, outgoingTransform);
 
     async function safelyInvoke(method, ...args) {

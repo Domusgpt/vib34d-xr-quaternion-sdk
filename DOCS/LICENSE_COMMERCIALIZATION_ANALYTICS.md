@@ -109,6 +109,14 @@ renderDashboard(sdk.getLicenseCommercializationSnapshots());
 
 The wearable designer demo showcases this flow by wiring an asynchronous remote storage adapter, rendering upload history, and waiting on `whenReady()` to refresh the KPI history once remote hydration completes.【F:wearable-designer.html†L318-L485】
 
+## Runbooks
+
+| Scenario | Steps |
+|----------|-------|
+| **Nightly KPI capture & export** | 1. Configure `telemetry.commercialization.snapshotIntervalMs` to your nightly cadence.<br>2. Provide a remote storage adapter via `createSignedS3CommercializationSnapshotStorage()` with retention metadata.<br>3. Call `sdk.getLicenseCommercializationSnapshotStore().whenReady()` during startup to hydrate the dashboard.<br>4. Consume `exportLicenseCommercializationSnapshots({ format: 'csv' })` after each capture for downstream BI jobs.【F:src/product/ProductTelemetryHarness.js†L468-L534】【F:src/product/licensing/storage/CommercializationSnapshotStorageAdapters.js†L1-L142】 |
+| **On-demand attestation coverage review** | 1. Trigger `sdk.captureLicenseCommercializationSnapshot({ trigger: 'manual-review', requestedBy })` prior to compliance reviews.<br>2. Use `sdk.getLicenseCommercializationKpiReport()` to compare deltas against the previous snapshot.<br>3. Persist the resulting KPI document through your compliance vault (e.g., `ComplianceVaultTelemetryProvider`) for audit trails.【F:src/product/ProductTelemetryHarness.js†L468-L534】【F:src/product/licensing/LicenseCommercializationSnapshotStore.js†L1-L238】 |
+| **Remote hydration fallback** | 1. Initialize the snapshot store with `storage.loadSnapshots()` returning the last exported payload.<br>2. Await `whenReady()` and render interim UI states until the promise resolves.<br>3. If hydration fails, call `clearSnapshots()` and capture a fresh snapshot to avoid stale metrics.【F:src/product/licensing/LicenseCommercializationSnapshotStore.js†L94-L206】 |
+
 ## Follow-Ups
 
 - Expand the pack catalog (healthcare, education) with commercialization metadata so KPI snapshots can highlight regulated market coverage.

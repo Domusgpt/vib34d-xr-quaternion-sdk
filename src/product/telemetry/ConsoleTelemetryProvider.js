@@ -6,6 +6,7 @@ export class ConsoleTelemetryProvider extends TelemetryProvider {
         this.events = [];
         this.identities = [];
         this.log = options.log ?? false;
+        this.requestMiddleware = [];
     }
 
     identify(identity, traits = {}) {
@@ -29,5 +30,15 @@ export class ConsoleTelemetryProvider extends TelemetryProvider {
             console.table(this.events);
         }
         this.events = [];
+    }
+
+    registerRequestMiddleware(middleware) {
+        if (typeof middleware === 'function') {
+            this.requestMiddleware.push(middleware);
+        }
+    }
+
+    clearRequestMiddleware() {
+        this.requestMiddleware = [];
     }
 }

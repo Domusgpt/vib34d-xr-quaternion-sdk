@@ -16,6 +16,476 @@ const DEFAULT_CLASSIFICATION_RULES = [
     { prefix: 'biometric.', classification: 'biometric' }
 ];
 
+function clampNumber(value, min, max) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) {
+        return min;
+    }
+    return Math.min(Math.max(number, min), max);
+}
+
+function toNumber(value, fallback = 0) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : fallback;
+}
+
+function toString(value) {
+    if (value === null || value === undefined) {
+        return '';
+    }
+    return String(value);
+}
+
+function asBoolean(value) {
+    return Boolean(value);
+}
+
+function cloneValue(value) {
+    if (!value || typeof value !== 'object') {
+        return value;
+    }
+    return JSON.parse(JSON.stringify(value));
+}
+
+function normalizeFieldDefinition(field, definition = {}) {
+    if (typeof definition === 'function') {
+        return {
+            name: field,
+            transform: definition,
+            required: false,
+            allowNull: true,
+            allowUndefined: true,
+            redact: false,
+            anonymize: false,
+            type: null,
+            validate: null,
+            defaultValue: undefined
+        };
+    }
+
+    const {
+        transform,
+        sanitize,
+        required = false,
+        allowNull = false,
+        allowUndefined,
+        redact = false,
+        anonymize = false,
+        type = null,
+        validate = null,
+        defaultValue,
+        default: aliasDefault,
+        enumeration
+    } = definition;
+
+    const validator = typeof validate === 'function'
+        ? validate
+        : Array.isArray(enumeration)
+            ? value => enumeration.includes(value) || `Value must be one of: ${enumeration.join(', ')}`
+            : null;
+
+    return {
+        name: field,
+        transform: typeof transform === 'function' ? transform : (typeof sanitize === 'function' ? sanitize : null),
+        required: Boolean(required),
+        allowNull: Boolean(allowNull),
+        allowUndefined: typeof allowUndefined === 'boolean' ? allowUndefined : !required,
+        redact: Boolean(redact),
+        anonymize,
+        type: typeof type === 'string' ? type : null,
+        validate: validator,
+        defaultValue: defaultValue !== undefined ? defaultValue : aliasDefault
+    };
+}
+
+function normalizeEventSchema(event, schema = {}) {
+    const {
+        classification = null,
+        fields = {},
+        allowUnknownFields = false,
+        dropOnValidationError = true,
+        metadata,
+        analytics = {}
+    } = schema;
+
+    const normalizedFields = new Map();
+    for (const [field, definition] of Object.entries(fields)) {
+        normalizedFields.set(field, normalizeFieldDefinition(field, definition));
+    }
+
+    return {
+        event,
+        classification: classification || null,
+        fields: normalizedFields,
+        allowUnknownFields: Boolean(allowUnknownFields),
+        dropOnValidationError: dropOnValidationError !== false,
+        metadata: metadata && typeof metadata === 'object' ? { ...metadata } : undefined,
+        analytics: analytics && typeof analytics === 'object' ? { ...analytics } : {}
+    };
+}
+
+function anonymizeValue(value) {
+    if (typeof value === 'string') {
+        return value.length <= 3 ? '***' : `${value.slice(0, 1)}***${value.slice(-1)}`;
+    }
+    if (typeof value === 'number') {
+        return 0;
+    }
+    if (typeof value === 'boolean') {
+        return false;
+    }
+    if (Array.isArray(value)) {
+        return value.map(item => anonymizeValue(item));
+    }
+    if (value && typeof value === 'object') {
+        const clone = {};
+        for (const key of Object.keys(value)) {
+            clone[key] = anonymizeValue(value[key]);
+        }
+        return clone;
+    }
+    return null;
+}
+
+function applyFieldDefinition(fieldDefinition, payload, context = {}) {
+    let value = payload[fieldDefinition.name];
+
+    if ((value === undefined || value === null) && fieldDefinition.defaultValue !== undefined) {
+        value = typeof fieldDefinition.defaultValue === 'function'
+            ? fieldDefinition.defaultValue(payload, context)
+            : cloneValue(fieldDefinition.defaultValue);
+    }
+
+    if ((value === undefined && !fieldDefinition.allowUndefined) || (value === null && !fieldDefinition.allowNull)) {
+        if (fieldDefinition.required) {
+            return { error: `Field "${fieldDefinition.name}" is required.` };
+        }
+        if (value === undefined) {
+            return { skip: true };
+        }
+    }
+
+    if (fieldDefinition.transform) {
+        try {
+            value = fieldDefinition.transform(value, payload, context);
+        } catch (error) {
+            return { error: `Field "${fieldDefinition.name}" transform failed: ${error?.message || error}` };
+        }
+    }
+
+    if (fieldDefinition.type && value !== undefined && value !== null) {
+        const actualType = Array.isArray(value) ? 'array' : typeof value;
+        if (actualType !== fieldDefinition.type) {
+            return { error: `Field "${fieldDefinition.name}" must be of type ${fieldDefinition.type}.` };
+        }
+    }
+
+    if (fieldDefinition.validate) {
+        try {
+            const result = fieldDefinition.validate(value, payload, context);
+            if (result === false) {
+                return { error: `Field "${fieldDefinition.name}" failed validation.` };
+            }
+            if (typeof result === 'string') {
+                return { error: result };
+            }
+        } catch (error) {
+            return { error: `Field "${fieldDefinition.name}" validation error: ${error?.message || error}` };
+        }
+    }
+
+    if (fieldDefinition.redact) {
+        return { skip: true };
+    }
+
+    if (fieldDefinition.anonymize) {
+        value = typeof fieldDefinition.anonymize === 'function'
+            ? fieldDefinition.anonymize(value, payload, context)
+            : anonymizeValue(value);
+    }
+
+    return { value };
+}
+
+function applyEventSchemaDefinition(schema, payload = {}, context = {}) {
+    if (!schema) {
+        return { payload: cloneValue(payload), classification: null };
+    }
+
+    const normalizedPayload = {};
+    const errors = [];
+    for (const fieldDefinition of schema.fields.values()) {
+        const { error, value, skip } = applyFieldDefinition(fieldDefinition, payload, context);
+        if (error) {
+            errors.push(error);
+            continue;
+        }
+        if (skip) {
+            continue;
+        }
+        normalizedPayload[fieldDefinition.name] = cloneValue(value);
+    }
+
+    if (errors.length) {
+        return { errors };
+    }
+
+    if (schema.allowUnknownFields) {
+        for (const [key, value] of Object.entries(payload || {})) {
+            if (!schema.fields.has(key)) {
+                normalizedPayload[key] = cloneValue(value);
+            }
+        }
+    }
+
+    return {
+        payload: normalizedPayload,
+        classification: schema.classification
+    };
+}
+
+const DEFAULT_EVENT_SCHEMAS = [
+    {
+        event: 'adaptive.focus',
+        classification: 'interaction',
+        fields: {
+            x: value => clampNumber(toNumber(value, 0), -1, 1),
+            y: value => clampNumber(toNumber(value, 0), -1, 1),
+            depth: value => clampNumber(toNumber(value, 0), 0, 1)
+        }
+    },
+    {
+        event: 'adaptive.gesture',
+        classification: 'interaction',
+        fields: {
+            intent: { required: true, transform: toString }
+        }
+    },
+    {
+        event: 'design.layout.strategy_registered',
+        classification: 'analytics',
+        fields: {
+            id: { required: true, transform: toString }
+        }
+    },
+    {
+        event: 'design.layout.annotation_registered',
+        classification: 'analytics',
+        fields: {
+            id: { required: true, transform: toString }
+        }
+    },
+    {
+        event: 'design.telemetry.provider_registered',
+        classification: 'system',
+        fields: {
+            id: { required: true, transform: toString }
+        }
+    },
+    {
+        event: 'design.telemetry.provider_removed',
+        classification: 'system',
+        fields: {
+            id: { required: true, transform: toString }
+        }
+    },
+    {
+        event: 'design.spec.activated',
+        classification: 'analytics',
+        fields: {
+            specId: { transform: toString },
+            channel: { transform: toString },
+            metadata: { transform: (value = {}) => cloneValue(value) }
+        },
+        allowUnknownFields: false
+    },
+    {
+        event: 'sensors.adapter.registered',
+        classification: 'system',
+        fields: {
+            type: { required: true, transform: toString },
+            autoConnect: { transform: asBoolean },
+            metadata: { transform: value => cloneValue(value || {}) }
+        }
+    },
+    {
+        event: 'sensors.adapter.connected',
+        classification: 'system',
+        fields: {
+            type: { required: true, transform: toString },
+            metadata: { transform: value => cloneValue(value || {}) }
+        }
+    },
+    {
+        event: 'sensors.adapter.disconnected',
+        classification: 'system',
+        fields: {
+            type: { required: true, transform: toString }
+        }
+    },
+    {
+        event: 'sensors.adapter.connect_failed',
+        classification: 'system',
+        fields: {
+            type: { required: true, transform: toString },
+            error: { transform: value => toString(value || 'unknown') }
+        }
+    },
+    {
+        event: 'sensors.adapter.disconnect_failed',
+        classification: 'system',
+        fields: {
+            type: { required: true, transform: toString },
+            error: { transform: value => toString(value || 'unknown') }
+        }
+    },
+    {
+        event: 'sensors.adapter.tested',
+        classification: 'system',
+        fields: {
+            type: { required: true, transform: toString },
+            result: { transform: value => cloneValue(value ?? null) }
+        }
+    },
+    {
+        event: 'sensors.schema_registered',
+        classification: 'compliance',
+        fields: {
+            type: { required: true, transform: toString }
+        }
+    },
+    {
+        event: 'sensors.schema_issue',
+        classification: 'compliance',
+        fields: {
+            type: { required: true, transform: toString },
+            issues: { transform: value => cloneValue(value || []) },
+            payload: { transform: value => cloneValue(value || {}) }
+        }
+    },
+    {
+        event: 'privacy.consent.updated',
+        classification: 'compliance',
+        fields: {
+            applied: { transform: value => cloneValue(value || {}) },
+            metadata: { transform: value => {
+                const clone = cloneValue(value || {});
+                if (clone.licenseKey) {
+                    delete clone.licenseKey;
+                }
+                if (clone.user) {
+                    delete clone.user;
+                }
+                return clone;
+            } },
+            snapshot: { transform: value => cloneValue(value || {}) }
+        }
+    },
+    {
+        event: 'privacy.event.blocked',
+        classification: 'compliance',
+        fields: {
+            event: { required: true, transform: toString },
+            classification: { transform: toString }
+        }
+    },
+    {
+        event: 'privacy.identity.blocked',
+        classification: 'compliance',
+        fields: {
+            identity: { transform: value => anonymizeValue(value) },
+            classification: { transform: toString }
+        }
+    },
+    {
+        event: 'compliance.license.blocked',
+        classification: 'compliance',
+        fields: {
+            action: { transform: toString },
+            event: { transform: value => value ? toString(value) : undefined },
+            status: { transform: value => cloneValue(value || {}) }
+        }
+    },
+    {
+        event: 'system.license.attestation_profile_registered',
+        classification: 'system',
+        fields: {
+            profileId: { required: true, transform: toString },
+            metadata: { transform: value => cloneValue(value || {}) }
+        }
+    },
+    {
+        event: 'system.license.attestation_profile_pack_registered',
+        classification: 'system',
+        fields: {
+            packId: { required: true, transform: toString },
+            profileIds: { transform: value => Array.isArray(value) ? value.map(toString) : [] }
+        }
+    },
+    {
+        event: 'system.license.attestation_profile_default',
+        classification: 'system',
+        fields: {
+            profileId: { transform: value => value ? toString(value) : null }
+        }
+    },
+    {
+        event: 'system.license.attestation_profile_applied',
+        classification: 'system',
+        fields: {
+            profileId: { required: true, transform: toString },
+            sla: { transform: value => cloneValue(value || null) }
+        }
+    },
+    {
+        event: 'system.license.attestation_scheduled',
+        classification: 'system',
+        fields: {
+            nextCheckAt: { transform: value => value ? toString(value) : null },
+            reason: { transform: value => value ? toString(value) : null }
+        }
+    },
+    {
+        event: 'compliance.license.attestation',
+        classification: 'compliance',
+        fields: {
+            valid: { transform: asBoolean },
+            reason: { transform: value => value ? toString(value) : null },
+            attestedAt: { transform: value => value ? toString(value) : null }
+        }
+    },
+    {
+        event: 'compliance.license.attestor_error',
+        classification: 'system',
+        fields: {
+            error: { transform: value => value ? toString(value) : 'Unknown error' }
+        }
+    },
+    {
+        event: 'compliance.license.revocation',
+        classification: 'compliance',
+        fields: {
+            revoked: { transform: asBoolean },
+            reason: { transform: value => value ? toString(value) : null }
+        }
+    },
+    {
+        event: 'compliance.license.entitlements',
+        classification: 'compliance',
+        fields: {
+            entitlements: { transform: value => Array.isArray(value) ? value.map(toString) : [] }
+        }
+    },
+    {
+        event: 'compliance.license.validation',
+        classification: 'compliance',
+        fields: {
+            state: { transform: value => value ? toString(value) : null },
+            metadata: { transform: value => cloneValue(value || {}) }
+        }
+    }
+];
+
 export class ProductTelemetryHarness {
     constructor(options = {}) {
         this.enabled = options.enabled ?? true;
@@ -109,6 +579,22 @@ export class ProductTelemetryHarness {
 
         this.requestMiddleware = [];
 
+        this.eventSchemas = new Map();
+        this.registerDefaultEventSchemas();
+        if (Array.isArray(options.eventSchemas)) {
+            this.registerEventSchemas(options.eventSchemas);
+        } else if (options.eventSchemas && typeof options.eventSchemas === 'object') {
+            this.registerEventSchemas(options.eventSchemas);
+        }
+
+        this.analytics = {
+            totalCount: 0,
+            events: new Map(),
+            classifications: new Map(),
+            firstEventAt: null,
+            lastEventAt: null
+        };
+
         if (this.licenseManager) {
             this.attachLicenseFromManager(this.licenseManager.getLicense());
             this.licenseManagerSubscription = this.licenseManager.onStatusChange?.(status => {
@@ -176,6 +662,153 @@ export class ProductTelemetryHarness {
         }
 
         throw new Error('Invalid classification rule supplied to ProductTelemetryHarness');
+    }
+
+    registerDefaultEventSchemas() {
+        for (const schema of DEFAULT_EVENT_SCHEMAS) {
+            if (!schema || !schema.event) continue;
+            if (this.eventSchemas.has(schema.event)) {
+                continue;
+            }
+            this.eventSchemas.set(schema.event, normalizeEventSchema(schema.event, schema));
+        }
+    }
+
+    registerEventSchema(eventOrSchema, schema) {
+        let eventId = eventOrSchema;
+        let definition = schema;
+        if (eventOrSchema && typeof eventOrSchema === 'object' && eventOrSchema.event) {
+            eventId = eventOrSchema.event;
+            definition = eventOrSchema;
+        }
+
+        if (!eventId || typeof eventId !== 'string') {
+            throw new Error('registerEventSchema requires an event id.');
+        }
+
+        const normalized = normalizeEventSchema(eventId, definition || {});
+        this.eventSchemas.set(eventId, normalized);
+        return this.getEventSchema(eventId);
+    }
+
+    registerEventSchemas(collection) {
+        if (!collection) {
+            return [];
+        }
+        if (Array.isArray(collection)) {
+            return collection.map(entry => this.registerEventSchema(entry));
+        }
+        if (typeof collection === 'object') {
+            const results = [];
+            for (const [eventId, schema] of Object.entries(collection)) {
+                results.push(this.registerEventSchema(eventId, schema));
+            }
+            return results;
+        }
+        return [];
+    }
+
+    removeEventSchema(eventId) {
+        return this.eventSchemas.delete(eventId);
+    }
+
+    getEventSchema(eventId) {
+        const schema = this.eventSchemas.get(eventId);
+        if (!schema) {
+            return null;
+        }
+        const fields = {};
+        for (const [name, definition] of schema.fields.entries()) {
+            fields[name] = {
+                required: definition.required,
+                allowNull: definition.allowNull,
+                allowUndefined: definition.allowUndefined,
+                redact: definition.redact,
+                anonymize: definition.anonymize,
+                type: definition.type,
+                defaultValue: definition.defaultValue
+            };
+        }
+        return {
+            event: schema.event,
+            classification: schema.classification,
+            allowUnknownFields: schema.allowUnknownFields,
+            metadata: schema.metadata ? { ...schema.metadata } : undefined,
+            analytics: schema.analytics ? { ...schema.analytics } : {},
+            fields
+        };
+    }
+
+    getEventSchemas() {
+        return Array.from(this.eventSchemas.keys()).map(eventId => this.getEventSchema(eventId));
+    }
+
+    prepareEventPayload(event, payload, context = {}) {
+        const schema = this.eventSchemas.get(event) || null;
+        const result = applyEventSchemaDefinition(schema, payload, { ...context, event });
+        return { ...result, schema };
+    }
+
+    recordAnalytics(event, classification, payload, timestamp = new Date().toISOString()) {
+        const normalizedClassification = classification || 'unclassified';
+        const eventStats = this.analytics.events.get(event) || {
+            count: 0,
+            classifications: {},
+            lastTimestamp: null,
+            samplePayload: null
+        };
+        eventStats.count += 1;
+        eventStats.lastTimestamp = timestamp;
+        eventStats.classifications[normalizedClassification] = (eventStats.classifications[normalizedClassification] || 0) + 1;
+        if (!eventStats.samplePayload) {
+            eventStats.samplePayload = cloneValue(payload);
+        }
+        this.analytics.events.set(event, eventStats);
+
+        const classStats = this.analytics.classifications.get(normalizedClassification) || {
+            count: 0,
+            lastTimestamp: null
+        };
+        classStats.count += 1;
+        classStats.lastTimestamp = timestamp;
+        this.analytics.classifications.set(normalizedClassification, classStats);
+
+        this.analytics.totalCount += 1;
+        if (!this.analytics.firstEventAt) {
+            this.analytics.firstEventAt = timestamp;
+        }
+        this.analytics.lastEventAt = timestamp;
+    }
+
+    getAnalyticsSummary(options = {}) {
+        const includeSamples = options.includeSamples ?? false;
+        return {
+            totalEvents: this.analytics.totalCount,
+            firstEventAt: this.analytics.firstEventAt,
+            lastEventAt: this.analytics.lastEventAt,
+            events: Array.from(this.analytics.events.entries()).map(([event, stats]) => ({
+                event,
+                count: stats.count,
+                lastTimestamp: stats.lastTimestamp,
+                classifications: { ...stats.classifications },
+                ...(includeSamples && stats.samplePayload ? { samplePayload: cloneValue(stats.samplePayload) } : {})
+            })),
+            classifications: Array.from(this.analytics.classifications.entries()).map(([classification, stats]) => ({
+                classification,
+                count: stats.count,
+                lastTimestamp: stats.lastTimestamp
+            }))
+        };
+    }
+
+    resetAnalyticsSummary() {
+        this.analytics = {
+            totalCount: 0,
+            events: new Map(),
+            classifications: new Map(),
+            firstEventAt: null,
+            lastEventAt: null
+        };
     }
 
     registerProvider(provider) {
@@ -385,8 +1018,31 @@ export class ProductTelemetryHarness {
             return;
         }
 
-        const sanitizedPayload = this.sanitizePayload(payload);
-        const classification = options.classification || this.classifyEvent(event, sanitizedPayload);
+        const schemaResult = this.prepareEventPayload(event, payload, options.schemaContext || options.context || {});
+        if (schemaResult.errors && (!schemaResult.schema || schemaResult.schema.dropOnValidationError !== false)) {
+            this.recordAudit('privacy.schema.validation_failed', {
+                event,
+                errors: schemaResult.errors,
+                classification: schemaResult.schema?.classification || null
+            });
+            return;
+        }
+
+        let normalizedPayload = schemaResult.payload || cloneValue(payload);
+        if (schemaResult.errors) {
+            this.recordAudit('privacy.schema.validation_failed', {
+                event,
+                errors: schemaResult.errors,
+                classification: schemaResult.schema?.classification || null,
+                suppressed: true
+            });
+            normalizedPayload = cloneValue(payload);
+        }
+
+        const sanitizedPayload = this.sanitizePayload(normalizedPayload);
+        const classification = options.classification
+            || schemaResult.classification
+            || this.classifyEvent(event, sanitizedPayload);
 
         if (!this.isConsentGranted(classification)) {
             this.recordAudit('privacy.event.blocked', { event, classification });
@@ -402,6 +1058,7 @@ export class ProductTelemetryHarness {
         };
 
         this.buffer.push(record);
+        this.recordAnalytics(event, classification, sanitizedPayload, record.timestamp);
         for (const provider of this.providers.values()) {
             provider.track?.(event, record, { classification });
         }
@@ -475,14 +1132,50 @@ export class ProductTelemetryHarness {
     }
 
     recordAudit(event, payload = {}, classification = 'compliance') {
+        const schemaResult = this.prepareEventPayload(event, payload, { mode: 'audit' });
+        if (schemaResult.errors && (!schemaResult.schema || schemaResult.schema.dropOnValidationError !== false)) {
+            this.pushAuditEntry({
+                event: 'privacy.schema.validation_failed',
+                payload: {
+                    event,
+                    errors: schemaResult.errors,
+                    classification: classification || schemaResult.classification || 'compliance',
+                    mode: 'audit'
+                },
+                classification: 'compliance',
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        let normalizedPayload = schemaResult.payload || cloneValue(payload);
+        if (schemaResult.errors && schemaResult.schema && schemaResult.schema.dropOnValidationError === false) {
+            this.pushAuditEntry({
+                event: 'privacy.schema.validation_failed',
+                payload: {
+                    event,
+                    errors: schemaResult.errors,
+                    classification: classification || schemaResult.classification || 'compliance',
+                    mode: 'audit',
+                    suppressed: true
+                },
+                classification: 'compliance',
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        const payloadForStorage = this.sanitizePayload(normalizedPayload);
+        const resolvedClassification = classification || schemaResult.classification || 'compliance';
+        const timestamp = new Date().toISOString();
+
         const entry = {
             event,
-            payload,
-            classification,
-            timestamp: new Date().toISOString()
+            payload: payloadForStorage,
+            classification: resolvedClassification,
+            timestamp
         };
 
         this.pushAuditEntry(entry);
+        this.recordAnalytics(event, resolvedClassification, payloadForStorage, timestamp);
 
         for (const provider of this.providers.values()) {
             if (typeof provider.recordAudit === 'function') {
