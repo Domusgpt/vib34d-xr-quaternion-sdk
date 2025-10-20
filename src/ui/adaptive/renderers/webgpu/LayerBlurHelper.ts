@@ -9,6 +9,9 @@ interface LayerBlurTextures {
   verticalView: unknown | null;
   halfWidth: number;
   halfHeight: number;
+  horizontalBindGroup: unknown | null;
+  verticalBindGroup: unknown | null;
+  lastSourceView: unknown | null;
 }
 
 export interface LayerBlurHelperOptions {
@@ -27,6 +30,8 @@ export class LayerBlurHelper {
   private blurResources: ReturnType<typeof createSeparableBlurPipeline> | null = null;
   private uniformBindGroup: unknown | null = null;
   private textures: LayerBlurTextures[] = [];
+  private lastWidth = 0;
+  private lastHeight = 0;
 
   constructor(options: LayerBlurHelperOptions) {
     this.device = options.device;
@@ -49,10 +54,17 @@ export class LayerBlurHelper {
   }
 
   resize(width: number, height: number): void {
-    this.disposeTextures();
     if (!this.blurResources) {
       return;
     }
+
+    if (width === this.lastWidth && height === this.lastHeight && this.textures.length > 0) {
+      return;
+    }
+
+    this.disposeTextures();
+    this.lastWidth = width;
+    this.lastHeight = height;
 
     this.textures = this.layers.map(layer => {
       if ((layer.blurRadius ?? 0) <= 0) {
@@ -63,6 +75,9 @@ export class LayerBlurHelper {
           verticalView: null,
           halfWidth: 0,
           halfHeight: 0,
+          horizontalBindGroup: null,
+          verticalBindGroup: null,
+          lastSourceView: null,
         };
       }
 
@@ -80,14 +95,25 @@ export class LayerBlurHelper {
         format: this.format,
         usage: GPU_TEXTURE_USAGE_RENDER_ATTACHMENT | GPU_TEXTURE_USAGE_TEXTURE_BINDING,
       });
+      const horizontalView = horizontal.createView();
+      const verticalView = vertical.createView();
 
       return {
         horizontal,
         vertical,
-        horizontalView: horizontal.createView(),
-        verticalView: vertical.createView(),
+        horizontalView,
+        verticalView,
         halfWidth,
         halfHeight,
+        horizontalBindGroup: null,
+        verticalBindGroup: this.device.createBindGroup({
+          layout: this.blurResources.sourceBindGroupLayout,
+          entries: [
+            { binding: 0, resource: this.sampler },
+            { binding: 1, resource: horizontalView },
+          ],
+        }),
+        lastSourceView: null,
       };
     });
   }
@@ -117,13 +143,16 @@ export class LayerBlurHelper {
       radius,
     });
 
-    const horizontalBindGroup = this.device.createBindGroup({
-      layout: this.blurResources.sourceBindGroupLayout,
-      entries: [
-        { binding: 0, resource: this.sampler },
-        { binding: 1, resource: sourceView },
-      ],
-    });
+    if (!descriptor.horizontalBindGroup || descriptor.lastSourceView !== sourceView) {
+      descriptor.horizontalBindGroup = this.device.createBindGroup({
+        layout: this.blurResources.sourceBindGroupLayout,
+        entries: [
+          { binding: 0, resource: this.sampler },
+          { binding: 1, resource: sourceView },
+        ],
+      });
+      descriptor.lastSourceView = sourceView;
+    }
 
     const horizontalPass = encoder.beginRenderPass({
       label: `Blur-H-${this.layers[layerIndex]?.name ?? layerIndex}`,
@@ -140,7 +169,7 @@ export class LayerBlurHelper {
     if (this.uniformBindGroup) {
       horizontalPass.setBindGroup(0, this.uniformBindGroup);
     }
-    horizontalPass.setBindGroup(1, horizontalBindGroup);
+    horizontalPass.setBindGroup(1, descriptor.horizontalBindGroup);
     horizontalPass.draw(3, 1, 0, 0);
     horizontalPass.end();
 
@@ -150,13 +179,14 @@ export class LayerBlurHelper {
       radius,
     });
 
-    const verticalBindGroup = this.device.createBindGroup({
+    const verticalBindGroup = descriptor.verticalBindGroup ?? this.device.createBindGroup({
       layout: this.blurResources.sourceBindGroupLayout,
       entries: [
         { binding: 0, resource: this.sampler },
         { binding: 1, resource: descriptor.horizontalView },
       ],
     });
+    descriptor.verticalBindGroup = verticalBindGroup;
 
     const verticalPass = encoder.beginRenderPass({
       label: `Blur-V-${this.layers[layerIndex]?.name ?? layerIndex}`,
@@ -198,8 +228,13 @@ export class LayerBlurHelper {
     this.textures.forEach(entry => {
       entry?.horizontal?.destroy?.();
       entry?.vertical?.destroy?.();
+      entry.horizontalBindGroup = null;
+      entry.verticalBindGroup = null;
+      entry.lastSourceView = null;
     });
     this.textures = [];
+    this.lastWidth = 0;
+    this.lastHeight = 0;
   }
 }
 

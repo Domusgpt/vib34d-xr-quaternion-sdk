@@ -4,6 +4,7 @@
  * Audio reactive only - no mouse/touch/scroll interference
  */
 import { HolographicVisualizer } from './HolographicVisualizer.js';
+import { registerCanvasLifecycle } from '../core/registerCanvasLifecycle.js';
 
 export class RealHolographicSystem {
     constructor() {
@@ -21,6 +22,7 @@ export class RealHolographicSystem {
         this.analyser = null;
         this.frequencyData = null;
         this.audioData = { bass: 0, mid: 0, high: 0 };
+        this.canvasLifecycleCleanup = null;
         
         // Variant names for display - SEQUENTIAL ORDER
         this.variantNames = [
@@ -43,6 +45,12 @@ export class RealHolographicSystem {
         ];
         
         this.initialize();
+
+        this.canvasLifecycleCleanup = registerCanvasLifecycle('holographic', {
+            applyRotor: rotor => this.setRotorState(rotor),
+            onActivate: () => this.setActive(true),
+            onDeactivate: () => this.setActive(false),
+        });
     }
     
     initialize() {
@@ -187,8 +195,38 @@ export class RealHolographicSystem {
                 console.error(`❌ Failed to update holographic layer ${index}:`, error);
             }
         });
-        
+
         console.log(`🔄 Holographic parameter update complete: ${param}=${value}`);
+    }
+
+    setRotorState(rotor) {
+        if (!rotor) {
+            return;
+        }
+
+        const state = Array.isArray(rotor)
+            ? {
+                xy: rotor[0],
+                xz: rotor[1],
+                yz: rotor[2],
+                xw: rotor[3],
+                yw: rotor[4],
+                zw: rotor[5]
+            }
+            : rotor;
+
+        const updates = {
+            rot4dXY: Number(state.xy ?? state.xY ?? 0) || 0,
+            rot4dXZ: Number(state.xz ?? state.xZ ?? 0) || 0,
+            rot4dYZ: Number(state.yz ?? state.yZ ?? 0) || 0,
+            rot4dXW: Number(state.xw ?? state.xW ?? 0) || 0,
+            rot4dYW: Number(state.yw ?? state.yW ?? 0) || 0,
+            rot4dZW: Number(state.zw ?? state.zW ?? 0) || 0,
+        };
+
+        Object.entries(updates).forEach(([key, value]) => {
+            this.updateParameter(key, value);
+        });
     }
     
     // Override updateVariant to preserve custom parameters
@@ -707,6 +745,10 @@ export class RealHolographicSystem {
     }
     
     destroy() {
+        if (this.canvasLifecycleCleanup) {
+            this.canvasLifecycleCleanup();
+            this.canvasLifecycleCleanup = null;
+        }
         this.visualizers.forEach(visualizer => {
             if (visualizer.destroy) {
                 visualizer.destroy();

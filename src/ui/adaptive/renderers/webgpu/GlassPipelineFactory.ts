@@ -11,6 +11,29 @@ import {
 } from './GPUInterfaces.ts';
 import type { GPUBufferLike } from './TripleBufferedUniform.ts';
 
+const shaderModuleCache = new WeakMap<GPUDeviceRaw, Map<string, unknown>>();
+const pipelineCache = new WeakMap<GPUDeviceRaw, Map<string, GlassPipelineResources>>();
+
+function getCachedShaderModule(device: GPUDeviceRaw, code: string, label: string): unknown {
+  let cache = shaderModuleCache.get(device);
+  if (!cache) {
+    cache = new Map();
+    shaderModuleCache.set(device, cache);
+  }
+
+  const existing = cache.get(code);
+  if (existing) {
+    return existing;
+  }
+
+  const module = device.createShaderModule({
+    label,
+    code,
+  });
+  cache.set(code, module);
+  return module;
+}
+
 export interface GlassPipelineResources {
   readonly uniformBindGroupLayout: unknown;
   readonly layerBindGroupLayout: unknown;
@@ -114,6 +137,31 @@ export interface GlassPipelineFactoryOptions {
 export function createGlassPipelines(options: GlassPipelineFactoryOptions): GlassPipelineResources {
   const { device, composer, layers, outputFormat, layerShaderCode, layerShaderCodes } = options;
 
+  const cacheKeyPayload = {
+    format: outputFormat,
+    layerOverrides: layerShaderCodes?.map(code => code ?? null) ?? null,
+    sharedOverride: layerShaderCode ?? null,
+    layers: layers.map(layer => ({
+      label: layer.pipelineLabel ?? layer.name ?? '',
+      blurRadius: layer.blurRadius ?? 0,
+      geometry: layer.shader?.geometry ?? null,
+      projection: layer.shader?.projection ?? null,
+      hasCustomCode: typeof layer.shader?.code === 'string' ? layer.shader.code.length : 0,
+    })),
+  };
+  const cacheKey = JSON.stringify(cacheKeyPayload);
+
+  let deviceCache = pipelineCache.get(device);
+  if (!deviceCache) {
+    deviceCache = new Map();
+    pipelineCache.set(device, deviceCache);
+  }
+
+  const cached = deviceCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   const uniformBindGroupLayout = device.createBindGroupLayout({
     label: 'GlassGlobals',
     entries: [
@@ -169,16 +217,10 @@ export function createGlassPipelines(options: GlassPipelineFactoryOptions): Glas
   });
 
   const layerShaderModules = shaderCodes.map((code, index) =>
-    device.createShaderModule({
-      label: `${layers[index]?.pipelineLabel ?? `GlassLayer${index}`}-Shader`,
-      code,
-    })
+    getCachedShaderModule(device, code, `${layers[index]?.pipelineLabel ?? `GlassLayer${index}`}-Shader`)
   );
 
-  const compositeShaderModule = device.createShaderModule({
-    label: 'CompositeShader',
-    code: buildCompositeShader(layers.length)
-  });
+  const compositeShaderModule = getCachedShaderModule(device, buildCompositeShader(layers.length), 'CompositeShader');
 
   const layerPipelineLayout = device.createPipelineLayout({
     bindGroupLayouts: [uniformBindGroupLayout, layerBindGroupLayout]
@@ -238,7 +280,7 @@ export function createGlassPipelines(options: GlassPipelineFactoryOptions): Glas
     addressModeV: 'clamp-to-edge'
   });
 
-  return {
+  const resources: GlassPipelineResources = {
     uniformBindGroupLayout,
     layerBindGroupLayout,
     compositeBindGroupLayout,
@@ -248,6 +290,9 @@ export function createGlassPipelines(options: GlassPipelineFactoryOptions): Glas
     layerShaderModules,
     layerShaderCodes: shaderCodes,
   };
+
+  deviceCache.set(cacheKey, resources);
+  return resources;
 }
 
 export function createLayerParameterResources(
