@@ -20,6 +20,13 @@ The `ProductTelemetryHarness` now tags every event with a classification before 
 
 Partners can append custom rules via `registerClassificationRule` or override defaults during SDK bootstrap (`telemetry.defaultConsent`).
 
+### Event Schema Catalog & Analytics Summary
+
+- **Schema registration.** `ProductTelemetryHarness` now exposes `registerEventSchema(s)` so partner shells can declare payload contracts per event. Each schema handles required fields, transforms, redaction, and anonymization before consent checks fire.【F:src/product/ProductTelemetryHarness.js†L639-L767】
+- **Validation feedback.** When a payload fails schema validation the harness records `privacy.schema.validation_failed` audit entries and suppresses dispatch unless the schema explicitly allows fallthrough, ensuring non-compliant payloads never leave the device.【F:src/product/ProductTelemetryHarness.js†L360-L425】
+- **Analytics snapshot.** Use `getTelemetryAnalyticsSummary()` (and `resetTelemetryAnalyticsSummary()`) to gather per-event counts, classification tallies, and sample payloads for dashboards or automated QA. The SDK forwards these helpers via `createAdaptiveSDK()` alongside `registerTelemetryEventSchema()` wrappers.【F:src/product/ProductTelemetryHarness.js†L704-L741】【F:src/core/AdaptiveSDK.js†L232-L244】
+- **Audit sanitization.** Audit entries now inherit schema sanitation so consent updates, license signals, and compliance events automatically remove license keys or user metadata before entering the vault or remote streams.【F:src/product/ProductTelemetryHarness.js†L426-L478】
+
 ## Consent Lifecycle
 - `updateTelemetryConsent(map, metadata)` toggles any classification at runtime. The harness logs every change under `privacy.consent.updated` for audit review and exposes a snapshot via `getTelemetryConsent()`.
 - Events that lack consent are dropped. The harness writes a `privacy.event.blocked` audit record containing the event name and classification so teams can surface consent dialogs or fallback UI.

@@ -9,9 +9,12 @@ import {
 } from './previewPresets.ts';
 import {
   PREVIEW_STORAGE_VERSION,
+  DEFAULT_PREVIEW_ROTOR_STATE,
   createPreviewStateStorage,
   parsePreviewState,
+  sanitizePreviewRotorState,
   stringifyPreviewState,
+  type PreviewRotorStatePayload,
   type PreviewStatePayload,
 } from './previewStateStorage.ts';
 import type {
@@ -23,10 +26,15 @@ import type {
   LayerMaterialConfig,
 } from '../ui/adaptive/renderers/webgpu/MultiLayerGlassComposer.ts';
 
+type SystemId = 'quantum' | 'holographic' | 'faceted' | 'polychora';
+
 export interface QuaternionPreviewOptions {
   heading?: string;
   initialAngles?: { yaw: number; pitch: number; roll: number };
   initialConfidence?: number;
+  initialSystem?: SystemId;
+  initialPresetId?: string;
+  initialRotor?: Partial<PreviewRotorStatePayload>;
 }
 
 interface ControlHandle {
@@ -160,31 +168,52 @@ const hexToColor = (hex: string): readonly [number, number, number] => {
 
 const toRounded = (value: number, precision = 4) => Number(value.toFixed(precision));
 
+const cloneRotorState = (rotor: PreviewRotorStatePayload): PreviewRotorStatePayload => ({
+  xy: rotor.xy,
+  xz: rotor.xz,
+  yz: rotor.yz,
+  xw: rotor.xw,
+  yw: rotor.yw,
+  zw: rotor.zw,
+});
+
 interface SystemBlueprint {
-  readonly id: 'quantum' | 'holographic' | 'faceted';
+  readonly id: SystemId;
   readonly label: string;
   readonly defaults: Record<string, number>;
 }
 
-const SYSTEM_BLUEPRINTS = [
+const SYSTEM_BLUEPRINTS: readonly SystemBlueprint[] = [
   {
     id: 'quantum',
     label: 'Quantum Engine',
-    defaults: { rot4dXW: 0, rot4dYW: 0, rot4dZW: 0, chaos: 0.2, intensity: 0.7 }
+    defaults: { rot4dXY: 0, rot4dXZ: 0, rot4dYZ: 0, rot4dXW: 0, rot4dYW: 0, rot4dZW: 0, chaos: 0.2, intensity: 0.7 }
   },
   {
     id: 'holographic',
     label: 'Holographic Engine',
-    defaults: { rot4dXW: 0, rot4dYW: 0, rot4dZW: 0, hue: 320, saturation: 0.9 }
+    defaults: { rot4dXY: 0, rot4dXZ: 0, rot4dYZ: 0, rot4dXW: 0, rot4dYW: 0, rot4dZW: 0, hue: 320, saturation: 0.9 }
   },
   {
     id: 'faceted',
     label: 'Faceted System',
-    defaults: { rot4dXW: 0, rot4dYW: 0, rot4dZW: 0, speed: 1 }
+    defaults: { rot4dXY: 0, rot4dXZ: 0, rot4dYZ: 0, rot4dXW: 0, rot4dYW: 0, rot4dZW: 0, speed: 1 }
+  },
+  {
+    id: 'polychora',
+    label: 'Polychora System',
+    defaults: {
+      rot4dXY: 0,
+      rot4dXZ: 0,
+      rot4dYZ: 0,
+      rot4dXW: 0,
+      rot4dYW: 0,
+      rot4dZW: 0,
+      lineThickness: 2.5,
+      translucency: 0.8,
+    }
   }
-] as const satisfies readonly SystemBlueprint[];
-
-type SystemId = (typeof SYSTEM_BLUEPRINTS)[number]['id'];
+];
 
 const isSystemId = (value: string): value is SystemId =>
   SYSTEM_BLUEPRINTS.some(blueprint => blueprint.id === value);
@@ -551,6 +580,10 @@ export function createQuaternionPreview(
 
   const storage = createPreviewStateStorage();
   const persistedState = storage?.load();
+  const persistedRotor = sanitizePreviewRotorState(persistedState?.rotor);
+  const initialRotor = options.initialRotor
+    ? sanitizePreviewRotorState(options.initialRotor)
+    : persistedRotor;
 
   let schedulePersist: () => void = () => {};
   let flushPersist: () => void = () => {};
@@ -612,6 +645,8 @@ export function createQuaternionPreview(
     if (candidate === CUSTOM_PRESET_ID || matchesPreset) {
       activePresetId = candidate;
     }
+  } else if (options.initialPresetId && PREVIEW_PRESETS.some(preset => preset.id === options.initialPresetId)) {
+    activePresetId = options.initialPresetId;
   }
 
   if (activePresetId !== (defaultPreset?.id ?? CUSTOM_PRESET_ID)) {
@@ -920,10 +955,13 @@ export function createQuaternionPreview(
   systemToggleCard.appendChild(systemToggleOptions);
 
   const systemToggleInputs = new Map<SystemId, HTMLInputElement>();
+  const requestedSystem = options.initialSystem && isSystemId(options.initialSystem)
+    ? options.initialSystem
+    : null;
   let activeSystemId: SystemId =
     persistedState && typeof persistedState.activeSystemId === 'string' && isSystemId(persistedState.activeSystemId)
       ? persistedState.activeSystemId
-      : SYSTEM_BLUEPRINTS[0]?.id ?? 'quantum';
+      : requestedSystem ?? SYSTEM_BLUEPRINTS[0]?.id ?? 'quantum';
 
   SYSTEM_BLUEPRINTS.forEach(({ id, label }) => {
     const option = document.createElement('label');
@@ -1430,6 +1468,60 @@ export function createQuaternionPreview(
 
   const systems = Object.fromEntries(systemsEntries) as Record<SystemId, MockQuaternionSystem>;
 
+  const applyRotorToSystem = (
+    system: MockQuaternionSystem | undefined,
+    rotor: PreviewRotorStatePayload
+  ) => {
+    if (!system) {
+      return;
+    }
+    system.updateParameter('rot4dXY', rotor.xy);
+    system.updateParameter('rot4dXZ', rotor.xz);
+    system.updateParameter('rot4dYZ', rotor.yz);
+    system.updateParameter('rot4dXW', rotor.xw);
+    system.updateParameter('rot4dYW', rotor.yw);
+    system.updateParameter('rot4dZW', rotor.zw);
+  };
+
+  const broadcastRotorSnapshot = (rotor: PreviewRotorStatePayload) => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const manager = (window as typeof window & {
+      canvasManager?: { updateQuaternionRotor?: (rotor: PreviewRotorStatePayload) => void };
+    }).canvasManager;
+    if (manager?.updateQuaternionRotor) {
+      try {
+        manager.updateQuaternionRotor(rotor);
+      } catch (error) {
+        console.warn('[QuaternionPreview] Failed to broadcast rotor state', error);
+      }
+    }
+  };
+
+  const applyRotorSnapshot = (rotor: PreviewRotorStatePayload) => {
+    Object.values(systems).forEach(system => applyRotorToSystem(system, rotor));
+    broadcastRotorSnapshot(rotor);
+  };
+
+  const readRotorSnapshot = (systemId: SystemId): PreviewRotorStatePayload => {
+    const system = systems[systemId];
+    if (!system) {
+      return cloneRotorState(DEFAULT_PREVIEW_ROTOR_STATE);
+    }
+    return sanitizePreviewRotorState({
+      xy: system.getParameter('rot4dXY'),
+      xz: system.getParameter('rot4dXZ'),
+      yz: system.getParameter('rot4dYZ'),
+      xw: system.getParameter('rot4dXW'),
+      yw: system.getParameter('rot4dYW'),
+      zw: system.getParameter('rot4dZW'),
+    });
+  };
+
+  let currentRotor = cloneRotorState(initialRotor);
+  applyRotorSnapshot(currentRotor);
+
   const synchronizer = new ShaderQuaternionSynchronizer({
     bridge,
     systems,
@@ -1456,6 +1548,7 @@ export function createQuaternionPreview(
         radio.checked = id === systemId;
       }
     });
+    currentRotor = readRotorSnapshot(systemId);
     schedulePersist();
   };
 
@@ -1496,6 +1589,8 @@ export function createQuaternionPreview(
   }
 
   function collectPreviewState(): PreviewStatePayload {
+    const rotorSnapshot = readRotorSnapshot(activeSystemId);
+    currentRotor = cloneRotorState(rotorSnapshot);
     return {
       version: PREVIEW_STORAGE_VERSION,
       activePresetId,
@@ -1511,6 +1606,7 @@ export function createQuaternionPreview(
         projection: state.projection,
         material: cloneMaterialControl(state.material),
       })),
+      rotor: cloneRotorState(rotorSnapshot),
     } satisfies PreviewStatePayload;
   }
 
@@ -1606,6 +1702,10 @@ export function createQuaternionPreview(
         ? payload.activeSystemId
         : (SYSTEM_BLUEPRINTS[0]?.id ?? activeSystemId);
     applyActiveSystem(nextSystemId);
+
+    const importedRotor = sanitizePreviewRotorState(payload.rotor ?? DEFAULT_PREVIEW_ROTOR_STATE);
+    currentRotor = cloneRotorState(importedRotor);
+    applyRotorSnapshot(currentRotor);
 
     if (geometryChanged) {
       void rebuildRenderer(activeRenderer !== 'webgl');

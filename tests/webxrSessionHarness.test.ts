@@ -66,6 +66,8 @@ describe('WebXRGlassSession', () => {
     const controller = {
       update: vi.fn(() => new Float32Array(WebXRQuaternionBridge.uniformFloatCount)),
       listLocalizationRisks: vi.fn(() => ['Rotor jitter risk']),
+      getLocalizationTelemetry: vi.fn(() => ({ snapshot: null, channel: null, summary: null, fusion: null, prediction: null })),
+      ingestLocalizationFrame: vi.fn(() => ({ snapshot: null, channel: null })),
     } as unknown as GlassUniformController;
 
     const projectionLayer = {};

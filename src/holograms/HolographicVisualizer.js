@@ -129,7 +129,13 @@ export class HolographicVisualizer {
             saturation: 0.8 + (variationLevel * 0.05), // Add saturation parameter
             intensity: 0.5 + (variationLevel * 0.1),
             chaos: config.chaos,
-            morph: config.morph
+            morph: config.morph,
+            rot4dXY: (variationLevel - 1.5) * 0.3,
+            rot4dXZ: ((baseGeometry % 3) - 1) * 0.25,
+            rot4dYZ: ((variant % 2) ? 0.2 : -0.2),
+            rot4dXW: 0,
+            rot4dYW: 0,
+            rot4dZW: 0
         };
     }
     
@@ -207,11 +213,47 @@ export class HolographicVisualizer {
             uniform float u_audioSpeedBoost;
             uniform float u_audioChaosBoost;
             uniform float u_audioColorShift;
+            uniform float u_rot4dXY;
+            uniform float u_rot4dXZ;
+            uniform float u_rot4dYZ;
             uniform float u_rot4dXW;
             uniform float u_rot4dYW;
             uniform float u_rot4dZW;
-            
+
             // 4D rotation matrices
+            mat4 rotateXY(float theta) {
+                float c = cos(theta);
+                float s = sin(theta);
+                return mat4(
+                    c, -s, 0, 0,
+                    s,  c, 0, 0,
+                    0,  0, 1, 0,
+                    0,  0, 0, 1
+                );
+            }
+
+            mat4 rotateXZ(float theta) {
+                float c = cos(theta);
+                float s = sin(theta);
+                return mat4(
+                    c, 0, -s, 0,
+                    0, 1,  0, 0,
+                    s, 0,  c, 0,
+                    0, 0,  0, 1
+                );
+            }
+
+            mat4 rotateYZ(float theta) {
+                float c = cos(theta);
+                float s = sin(theta);
+                return mat4(
+                    1, 0,  0, 0,
+                    0, c, -s, 0,
+                    0, s,  c, 0,
+                    0, 0,  0, 1
+                );
+            }
+
             mat4 rotateXW(float theta) {
                 float c = cos(theta);
                 float s = sin(theta);
@@ -416,6 +458,9 @@ export class HolographicVisualizer {
                 float touchRotation = u_touchMorph * 0.2;
                 
                 // Combine manual rotation with automatic/interactive rotation
+                p4d = rotateXY(u_rot4dXY + u_touchMorph * 0.15 + u_audioMorphBoost * 0.05) * p4d;
+                p4d = rotateXZ(u_rot4dXZ + scrollRotation * 0.3 + u_audioChaosBoost * 0.05) * p4d;
+                p4d = rotateYZ(u_rot4dYZ + mouseOffset.x * 0.35 + u_audioDensityBoost * 0.05) * p4d;
                 p4d = rotateXW(u_rot4dXW + time * 0.2 + mouseOffset.y * 0.5 + scrollRotation) * p4d;
                 p4d = rotateYW(u_rot4dYW + time * 0.15 + mouseOffset.x * 0.5 + touchRotation) * p4d;
                 p4d = rotateZW(u_rot4dZW + time * 0.25 + u_clickIntensity * 0.3 + u_touchChaos * 0.4) * p4d;
@@ -515,6 +560,9 @@ export class HolographicVisualizer {
             audioSpeedBoost: this.gl.getUniformLocation(this.program, 'u_audioSpeedBoost'),
             audioChaosBoost: this.gl.getUniformLocation(this.program, 'u_audioChaosBoost'),
             audioColorShift: this.gl.getUniformLocation(this.program, 'u_audioColorShift'),
+            rot4dXY: this.gl.getUniformLocation(this.program, 'u_rot4dXY'),
+            rot4dXZ: this.gl.getUniformLocation(this.program, 'u_rot4dXZ'),
+            rot4dYZ: this.gl.getUniformLocation(this.program, 'u_rot4dYZ'),
             rot4dXW: this.gl.getUniformLocation(this.program, 'u_rot4dXW'),
             rot4dYW: this.gl.getUniformLocation(this.program, 'u_rot4dYW'),
             rot4dZW: this.gl.getUniformLocation(this.program, 'u_rot4dZW')
@@ -806,6 +854,9 @@ export class HolographicVisualizer {
         this.gl.uniform1f(this.uniforms.audioColorShift, audioColor);
         
         // 4D rotation uniforms
+        this.gl.uniform1f(this.uniforms.rot4dXY, this.variantParams.rot4dXY || 0.0);
+        this.gl.uniform1f(this.uniforms.rot4dXZ, this.variantParams.rot4dXZ || 0.0);
+        this.gl.uniform1f(this.uniforms.rot4dYZ, this.variantParams.rot4dYZ || 0.0);
         this.gl.uniform1f(this.uniforms.rot4dXW, this.variantParams.rot4dXW || 0.0);
         this.gl.uniform1f(this.uniforms.rot4dYW, this.variantParams.rot4dYW || 0.0);
         this.gl.uniform1f(this.uniforms.rot4dZW, this.variantParams.rot4dZW || 0.0);
@@ -896,8 +947,11 @@ export class HolographicVisualizer {
         const paramMap = {
             'gridDensity': 'density',
             'morphFactor': 'morph',
+            'rot4dXY': 'rot4dXY',
+            'rot4dXZ': 'rot4dXZ',
+            'rot4dYZ': 'rot4dYZ',
             'rot4dXW': 'rot4dXW',
-            'rot4dYW': 'rot4dYW', 
+            'rot4dYW': 'rot4dYW',
             'rot4dZW': 'rot4dZW',
             'hue': 'hue',
             'intensity': 'intensity',

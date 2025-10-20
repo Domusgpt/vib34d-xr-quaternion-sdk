@@ -7,6 +7,13 @@ import { buildLayoutBlueprint } from '../ui/adaptive/renderers/LayoutBlueprintRe
 import { ProjectionFieldComposer } from '../ui/adaptive/renderers/ProjectionFieldComposer.js';
 import { ProjectionScenarioSimulator } from '../ui/adaptive/simulators/ProjectionScenarioSimulator.js';
 import { ProjectionScenarioCatalog, createProjectionScenarioCatalog } from '../ui/adaptive/simulators/ProjectionScenarioCatalog.js';
+import { QuaternionPoseRegistry } from './quaternion/registry.ts';
+import {
+    deriveRotorSnapshot,
+    normalize as normalizeQuaternion,
+    toAxisAngle,
+    dualQuaternionToMatrix4
+} from './quaternion/index.ts';
 
 /**
  * AdaptiveInterfaceEngine
@@ -29,6 +36,12 @@ export class AdaptiveInterfaceEngine extends VIB34DIntegratedEngine {
             ...(options.projection?.simulator || {}),
             composer: this.projectionComposer
         });
+        const quaternionOptions = options.localization?.quaternion || options.localization?.quaternions || {};
+        if (quaternionOptions instanceof QuaternionPoseRegistry) {
+            this.quaternionRegistry = quaternionOptions;
+        } else {
+            this.quaternionRegistry = new QuaternionPoseRegistry(quaternionOptions);
+        }
         const catalogOption = options.projection?.catalog;
         if (catalogOption instanceof ProjectionScenarioCatalog) {
             this.projectionCatalog = catalogOption;
@@ -139,6 +152,35 @@ export class AdaptiveInterfaceEngine extends VIB34DIntegratedEngine {
         return this.telemetry.getAuditTrail();
     }
 
+    registerTelemetryEventSchema(eventOrSchema, schema) {
+        return this.telemetry.registerEventSchema(eventOrSchema, schema);
+    }
+
+    registerTelemetryEventSchemas(schemas) {
+        return this.telemetry.registerEventSchemas(schemas);
+    }
+
+    removeTelemetryEventSchema(eventId) {
+        return this.telemetry.removeEventSchema(eventId);
+    }
+
+    getTelemetryEventSchema(eventId) {
+        return this.telemetry.getEventSchema(eventId);
+    }
+
+    getTelemetryEventSchemas() {
+        return this.telemetry.getEventSchemas();
+    }
+
+    getTelemetryAnalyticsSummary(options = {}) {
+        return this.telemetry.getAnalyticsSummary(options);
+    }
+
+    resetTelemetryAnalyticsSummary() {
+        this.telemetry.resetAnalyticsSummary();
+        return this;
+    }
+
     getLicenseCommercializationSummary() {
         return this.telemetry.getCommercializationSummary();
     }
@@ -233,6 +275,7 @@ export class AdaptiveInterfaceEngine extends VIB34DIntegratedEngine {
     updateVisualizers() {
         if (this.adaptiveUpdateNeeded) {
             const context = this.sensoryBridge.getSnapshot();
+            this.applyQuaternionToParameters();
             this.activeLayout = this.layoutSynthesizer.generateLayout(context);
             this.applyLayoutToParameters(this.activeLayout);
             this.activeBlueprint = buildLayoutBlueprint(this.activeLayout, this.activeDesignSpec, context);
@@ -273,6 +316,59 @@ export class AdaptiveInterfaceEngine extends VIB34DIntegratedEngine {
         }
 
         super.updateVisualizers();
+    }
+
+    applyQuaternionToParameters() {
+        if (!this.parameterManager || !this.quaternionRegistry) {
+            return;
+        }
+
+        const primaryDevice = this.getPrimaryQuaternionDevice();
+        if (!primaryDevice) {
+            return;
+        }
+
+        const rotor = this.quaternionRegistry.getInterpolatedRotor(primaryDevice.id, 0.85);
+        const orientation = primaryDevice.current?.orientation || null;
+
+        if (rotor) {
+            this.parameterManager.setParameter('rot4dXY', rotor.xy);
+            this.parameterManager.setParameter('rot4dXZ', rotor.xz);
+            this.parameterManager.setParameter('rot4dYZ', rotor.yz);
+            this.parameterManager.setParameter('rot4dXW', rotor.xw);
+            this.parameterManager.setParameter('rot4dYW', rotor.yw);
+            this.parameterManager.setParameter('rot4dZW', rotor.zw);
+        }
+
+        if (orientation) {
+            const normalized = normalizeQuaternion(orientation);
+            const { axis, angle } = toAxisAngle(normalized);
+            const rotor4d = deriveRotorSnapshot(normalized).rotor4d;
+            if (!rotor) {
+                this.parameterManager.setParameter('rot4dXY', axis[2] * angle);
+                this.parameterManager.setParameter('rot4dXZ', -axis[1] * angle);
+                this.parameterManager.setParameter('rot4dYZ', axis[0] * angle);
+            }
+            this.parameterManager.setParameter('rot4dXW', rotor4d[0]);
+            this.parameterManager.setParameter('rot4dYW', rotor4d[1]);
+            this.parameterManager.setParameter('rot4dZW', rotor4d[2]);
+        }
+    }
+
+    getPrimaryQuaternionDevice() {
+        if (!this.quaternionRegistry) {
+            return null;
+        }
+        const headsets = this.quaternionRegistry.getDevicesByRole('headset');
+        if (headsets.length > 0) {
+            return headsets[0];
+        }
+        const controllers = this.quaternionRegistry.getDevicesByRole('controller');
+        if (controllers.length > 0) {
+            return controllers[0];
+        }
+        const anyDevice = this.quaternionRegistry.getDevices();
+        return anyDevice.length > 0 ? anyDevice[0] : null;
     }
 
     applyLayoutToParameters(layout) {
@@ -422,6 +518,33 @@ export class AdaptiveInterfaceEngine extends VIB34DIntegratedEngine {
             packs: this.projectionCatalog.listScenarioPacks(),
             scenarios: this.projectionCatalog.listScenarios()
         };
+    }
+
+    ingestQuaternionFrame(payload) {
+        const frame = this.quaternionRegistry.ingestFrame(payload);
+        this.adaptiveUpdateNeeded = true;
+        return frame;
+    }
+
+    getQuaternionRegistry() {
+        return this.quaternionRegistry;
+    }
+
+    getQuaternionDevices() {
+        return this.quaternionRegistry.getDevices();
+    }
+
+    getQuaternionDevice(id) {
+        return this.quaternionRegistry.getDevice(id);
+    }
+
+    getQuaternionRotor(id, alpha = 1) {
+        return this.quaternionRegistry.getInterpolatedRotor(id, alpha);
+    }
+
+    getQuaternionMatrix(id, alpha = 1) {
+        const dq = this.quaternionRegistry.getInterpolatedDualQuaternion(id, alpha);
+        return dq ? dualQuaternionToMatrix4(dq) : null;
     }
 
     dispose() {
