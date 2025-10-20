@@ -27,6 +27,8 @@ npx serve -p 8080
 open http://localhost:8080
 ```
 
+> **Preview tip:** `pnpm dev:web` boots the Vite-powered quaternion preview harness. Append query parameters such as `?system=polychora&preset=aurora-cascade&yaw=45&pitch=12&roll=-18` to pre-select a visualization engine, Storybook preset, or initial camera angles.
+
 ### Project Structure
 ```
 vib34d-ultimate-viewer/
@@ -143,6 +145,9 @@ const paramManager = new ParameterManager();
 // Core parameters
 const defaultParams = {
     geometry: 0,            // 0-7 geometry types
+    rot4dXY: 0.0,          // -6.28 to 6.28 radians
+    rot4dXZ: 0.0,          // -6.28 to 6.28 radians
+    rot4dYZ: 0.0,          // -6.28 to 6.28 radians
     rot4dXW: 0.0,          // -6.28 to 6.28 radians
     rot4dYW: 0.0,          // -6.28 to 6.28 radians
     rot4dZW: 0.0,          // -6.28 to 6.28 radians

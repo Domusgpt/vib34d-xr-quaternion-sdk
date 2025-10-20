@@ -191,6 +191,13 @@ All variations are stored as JSON with comprehensive metadata:
 - Gallery load: <1 second
 - Trading card generation: <3 seconds
 
+### Rotor Compute Benchmarks
+
+`tests/rotorPerformance.bench.ts` establishes a repeatable benchmark suite for quaternion rotor processing. The CPU fallback path
+(`deriveRotorSnapshot`) sustains roughly 64 samples in ~1.8ms on reference Apple M3 Pro hardware, while the mocked WebGPU compute
+pipeline (`QuaternionRotorCompute.process`) completes the same batch in ~0.35ms. Regressions that exceed a 2× delta from these
+baselines should block release until resolved.
+
 ## 🔒 Security & Privacy
 
 - No external API calls (100% client-side)

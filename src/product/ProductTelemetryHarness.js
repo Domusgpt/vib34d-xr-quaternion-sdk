@@ -3,6 +3,8 @@ import { LicenseAttestationProfileRegistry } from './licensing/LicenseAttestatio
 import { resolveLicenseAttestationProfilePack } from './licensing/LicenseAttestationProfileCatalog.js';
 import { LicenseCommercializationReporter } from './licensing/LicenseCommercializationReporter.js';
 import { LicenseCommercializationSnapshotStore } from './licensing/LicenseCommercializationSnapshotStore.js';
+import { TelemetryEventSchemaRegistry } from './telemetry/TelemetryEventSchemaRegistry.js';
+import { DEFAULT_TELEMETRY_EVENT_SCHEMAS } from './telemetry/defaultEventSchemas.js';
 
 const DEFAULT_CLASSIFICATION_RULES = [
     { prefix: 'adaptive.', classification: 'interaction' },
@@ -104,6 +106,41 @@ export class ProductTelemetryHarness {
         this.auditLog = [];
         this.auditLogLimit = options.auditLogLimit || 200;
         this.onConsentDecision = typeof options.onConsentDecision === 'function' ? options.onConsentDecision : null;
+
+        const eventSchemaRegistryOption = options.eventSchemaRegistry;
+        this.eventSchemas = eventSchemaRegistryOption instanceof TelemetryEventSchemaRegistry
+            ? eventSchemaRegistryOption
+            : new TelemetryEventSchemaRegistry({
+                defaultClassification: this.defaultClassification,
+                defaultRetention: options.defaultEventRetention || 'session'
+            });
+
+        const baseSchemas = Array.isArray(options.baseEventSchemas)
+            ? options.baseEventSchemas
+            : DEFAULT_TELEMETRY_EVENT_SCHEMAS;
+        for (const schema of baseSchemas) {
+            try {
+                this.eventSchemas.register(schema);
+            } catch (error) {
+                console?.warn?.('ProductTelemetryHarness failed to register default event schema', error);
+            }
+        }
+
+        if (Array.isArray(options.eventSchemas)) {
+            for (const schema of options.eventSchemas) {
+                try {
+                    this.eventSchemas.register(schema);
+                } catch (error) {
+                    console?.warn?.('ProductTelemetryHarness failed to register event schema', error);
+                }
+            }
+        }
+
+        this.metrics = {
+            eventsByClassification: new Map(),
+            eventsByName: new Map(),
+            lastEventAt: null
+        };
 
         this.providers = new Map();
 
@@ -212,6 +249,40 @@ export class ProductTelemetryHarness {
                 provider.clearRequestMiddleware();
             }
         }
+    }
+
+    registerTelemetryEventSchema(schema) {
+        return this.eventSchemas.register(schema);
+    }
+
+    getTelemetryMetrics() {
+        const classifications = Object.fromEntries(
+            Array.from(this.metrics.eventsByClassification.entries()).map(([classification, value]) => [classification, {
+                count: value.count,
+                lastEventAt: value.lastEventAt
+            }])
+        );
+
+        const events = Object.fromEntries(
+            Array.from(this.metrics.eventsByName.entries()).map(([event, value]) => [event, {
+                count: value.count,
+                classification: value.classification,
+                lastEventAt: value.lastEventAt,
+                retention: value.retention
+            }])
+        );
+
+        return {
+            classifications,
+            events,
+            lastEventAt: this.metrics.lastEventAt
+        };
+    }
+
+    resetTelemetryMetrics() {
+        this.metrics.eventsByClassification.clear();
+        this.metrics.eventsByName.clear();
+        this.metrics.lastEventAt = null;
     }
 
     registerLicenseAttestationProfile(profileOrId, maybeProfile, context = {}) {
@@ -386,25 +457,52 @@ export class ProductTelemetryHarness {
         }
 
         const sanitizedPayload = this.sanitizePayload(payload);
-        const classification = options.classification || this.classifyEvent(event, sanitizedPayload);
+        const schemaResult = this.eventSchemas.evaluate(event, sanitizedPayload, {
+            classificationOverride: options.classification,
+            licenseKey: this.dataMinimization.omitLicense ? undefined : this.licenseKey
+        });
 
-        if (!this.isConsentGranted(classification)) {
+        if (!schemaResult.allowed) {
+            this.recordAudit('privacy.event.schema_blocked', {
+                event,
+                reason: schemaResult.reason,
+                classification: schemaResult.classification
+            });
+            return;
+        }
+
+        const classification = options.classification
+            || schemaResult.classification
+            || this.classifyEvent(event, schemaResult.payload);
+        const requiresConsent = schemaResult.requiresConsent !== undefined
+            ? schemaResult.requiresConsent
+            : true;
+
+        if (requiresConsent && !this.isConsentGranted(classification)) {
             this.recordAudit('privacy.event.blocked', { event, classification });
             return;
         }
 
+        const timestamp = new Date().toISOString();
         const record = {
             event,
-            payload: sanitizedPayload,
+            payload: schemaResult.payload,
             classification,
             licenseKey: this.dataMinimization.omitLicense ? undefined : this.licenseKey,
-            timestamp: new Date().toISOString()
+            timestamp,
+            retention: schemaResult.retention
         };
+
+        if (schemaResult.metadata) {
+            record.schemaMetadata = schemaResult.metadata;
+        }
 
         this.buffer.push(record);
         for (const provider of this.providers.values()) {
             provider.track?.(event, record, { classification });
         }
+
+        this.updateTelemetryMetrics(event, classification, timestamp, schemaResult.retention);
     }
 
     sanitizePayload(payload) {
@@ -441,6 +539,22 @@ export class ProductTelemetryHarness {
             }
         }
         return this.defaultClassification;
+    }
+
+    updateTelemetryMetrics(event, classification, timestamp, retention) {
+        const existingClassification = this.metrics.eventsByClassification.get(classification) || { count: 0, lastEventAt: null };
+        existingClassification.count += 1;
+        existingClassification.lastEventAt = timestamp;
+        this.metrics.eventsByClassification.set(classification, existingClassification);
+
+        const existingEvent = this.metrics.eventsByName.get(event) || { count: 0, classification, lastEventAt: null, retention };
+        existingEvent.count += 1;
+        existingEvent.classification = classification;
+        existingEvent.lastEventAt = timestamp;
+        existingEvent.retention = retention;
+        this.metrics.eventsByName.set(event, existingEvent);
+
+        this.metrics.lastEventAt = timestamp;
     }
 
     isConsentGranted(classification) {
