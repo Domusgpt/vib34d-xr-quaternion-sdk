@@ -20,6 +20,12 @@ The `ProductTelemetryHarness` now tags every event with a classification before 
 
 Partners can append custom rules via `registerClassificationRule` or override defaults during SDK bootstrap (`telemetry.defaultConsent`).
 
+### Event Schema Registry
+- The harness now bootstraps a `TelemetryEventSchemaRegistry` with defaults covering `adaptive.*`, `design.*`, `compliance.*`, `privacy.*`, `sensors.*`, and `biometric.*` channels.
+- Schemas provide classification overrides, payload defaults, redaction/masking hooks, validation gates, and retention metadata surfaced on every tracked record.
+- Call `sdk.registerTelemetryEventSchema(schema)` to extend the registry; the helper returns an unregister callback so feature flags can swap schema definitions at runtime.
+- Use `sdk.getTelemetryMetrics()` to retrieve aggregate counts by classification/event and `sdk.resetTelemetryMetrics()` after audits or incident drills.
+
 ## Consent Lifecycle
 - `updateTelemetryConsent(map, metadata)` toggles any classification at runtime. The harness logs every change under `privacy.consent.updated` for audit review and exposes a snapshot via `getTelemetryConsent()`.
 - Events that lack consent are dropped. The harness writes a `privacy.event.blocked` audit record containing the event name and classification so teams can surface consent dialogs or fallback UI.

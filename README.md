@@ -32,6 +32,13 @@ A focused SDK extracting VIB34D's quaternion mathematics and XR sensor integrati
 - **Holographic System**: Audio-reactive visualizations with 4D hyperplane rotation
 - **Polychora System**: Native 4D polytope rendering
 
+## Phase Delivery Status
+
+### Phase 3 — Visualization Engines & Renderer Synchronization ✅
+- Introduced a reusable `attachVisualizationLifecycle` helper so CanvasManager lifecycle events behave consistently across the faceted, quantum, holographic, and polychora engines, and ensured every engine disposes the bridge during teardown.
+- Centralized glass material defaults, cached WebGPU pipeline creation, reused blur bind groups, and aligned the WebGL fallback renderer’s baseline palette with the shared defaults for consistent visuals.
+- Extended the preview tooling with Polychora system support, a cross-platform `pnpm dev:web` launcher, updated Storybook scenarios, and refreshed documentation to describe the new presets and lifecycle bridge.
+
 ### Commercial Features
 - **License Manager**: Attestation profiles for enterprise/studio/indie tiers
 - **Telemetry System**: Privacy-compliant event tracking
@@ -161,6 +168,8 @@ All visualization systems share quaternion-driven 4D rotation:
 These map directly to XR device orientations via `ShaderQuaternionSynchronizer`.
 
 When the runtime switches between faceted, quantum, or holographic engines the `CanvasManager` now dispatches `vib34d:system-activated` / `vib34d:system-deactivated` events. The `ShaderQuaternionSynchronizer` listens for those and only streams quaternion updates into the active system, preventing multiple heavy canvases from competing for WebGL/WebGPU resources. To guard against environments that do not emit those lifecycle events, the synchronizer also enforces a single active target by default—you can opt into multi-system streaming by passing `maxActiveSystems` when constructing it. The preview harness mirrors this exclusivity with a radio selector so you can swap the active visualization system without spinning up concurrent canvases. The same manager now watches viewport and orientation changes, resizes the live canvas stack, and notifies the active engine so fidelity stays consistent when users rotate a headset or resize the host window.
+
+In addition to the lifecycle events, `CanvasManager` maintains the latest six-plane rotor snapshot and rebroadcasts it to the active engine via `updateQuaternionRotor`. Engines that expose `setRotorState` or `updateParameter` automatically receive synchronized values for `rot4dXY`, `rot4dXZ`, `rot4dYZ`, `rot4dXW`, `rot4dYW`, and `rot4dZW`, keeping faceted, quantum, holographic, and polychora visualizations locked to the same quaternion stream.
 
 ## 📖 Documentation
 

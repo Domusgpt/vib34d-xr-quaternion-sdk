@@ -111,13 +111,21 @@ export function createAdaptiveSDK(config = {}) {
         telemetryOptions.licenseAttestorBinding = licenseAttestorBindingOptions;
     }
 
+    const localizationOptions = { ...(config.localization || {}) };
+    if (config.quaternionRegistry) {
+        localizationOptions.quaternion = config.quaternionRegistry;
+    } else if (config.localizationQuaternionRegistry) {
+        localizationOptions.quaternion = config.localizationQuaternionRegistry;
+    }
+
     const engine = new AdaptiveInterfaceEngine({
         sensory: config.sensory,
         layout: config.layout,
         design: config.design,
         telemetry: telemetryOptions,
         marketplaceHooks: config.marketplaceHooks,
-        projection: config.projection
+        projection: config.projection,
+        localization: localizationOptions
     });
 
     if (licenseManager) {
@@ -229,6 +237,7 @@ export function createAdaptiveSDK(config = {}) {
         registerTelemetryProvider: engine.registerTelemetryProvider.bind(engine),
         registerTelemetryRequestMiddleware: engine.registerTelemetryRequestMiddleware.bind(engine),
         clearTelemetryRequestMiddleware: engine.clearTelemetryRequestMiddleware.bind(engine),
+        registerTelemetryEventSchema: engine.telemetry.registerTelemetryEventSchema.bind(engine.telemetry),
         registerLicenseAttestationProfile: engine.registerLicenseAttestationProfile.bind(engine),
         registerLicenseAttestationProfilePack: engine.registerLicenseAttestationProfilePack.bind(engine),
         getLicenseAttestationProfiles: engine.telemetry.getLicenseAttestationProfiles.bind(engine.telemetry),
@@ -251,6 +260,8 @@ export function createAdaptiveSDK(config = {}) {
         updateTelemetryConsent: engine.telemetry.updateConsent.bind(engine.telemetry),
         getTelemetryConsent: engine.telemetry.getConsentSnapshot.bind(engine.telemetry),
         getTelemetryAuditTrail: engine.getTelemetryAuditTrail.bind(engine),
+        getTelemetryMetrics: engine.telemetry.getTelemetryMetrics.bind(engine.telemetry),
+        resetTelemetryMetrics: engine.telemetry.resetTelemetryMetrics.bind(engine.telemetry),
         getLicenseCommercializationSummary: engine.getLicenseCommercializationSummary.bind(engine),
         getLicenseCommercializationReporter: engine.getLicenseCommercializationReporter.bind(engine),
         getLicenseCommercializationSnapshotStore: engine.getLicenseCommercializationSnapshotStore.bind(engine),
@@ -329,6 +340,12 @@ export function createAdaptiveSDK(config = {}) {
         getProjectionScenarioCatalog() {
             return engine.getProjectionScenarioCatalog();
         },
+        ingestQuaternionFrame: engine.ingestQuaternionFrame.bind(engine),
+        getQuaternionRegistry: engine.getQuaternionRegistry.bind(engine),
+        getQuaternionDevices: engine.getQuaternionDevices.bind(engine),
+        getQuaternionDevice: engine.getQuaternionDevice.bind(engine),
+        getQuaternionRotor: engine.getQuaternionRotor.bind(engine),
+        getQuaternionMatrix: engine.getQuaternionMatrix.bind(engine),
         setLicenseAttestor(attestor, options = {}) {
             if (attestor && typeof attestor.createValidator !== 'function' && typeof attestor.bindToLicenseManager !== 'function') {
                 throw new Error('Invalid license attestor provided.');

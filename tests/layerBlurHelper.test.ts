@@ -61,6 +61,11 @@ describe('LayerBlurHelper', () => {
     const blurredView = helper.encodeBlur(encoder as any, 0, baseView, 1024, 768);
     expect(blurredView).not.toBe(baseView);
 
+    const bindCallsAfterFirst = device.createBindGroup.mock.calls.length;
+    const blurredViewAgain = helper.encodeBlur(encoder as any, 0, baseView, 1024, 768);
+    expect(blurredViewAgain).not.toBe(baseView);
+    expect(device.createBindGroup.mock.calls.length).toBe(bindCallsAfterFirst);
+
     const passthroughView = { label: 'passthrough' };
     const result = helper.encodeBlur(encoder as any, 1, passthroughView, 1024, 768);
     expect(result).toBe(passthroughView);

@@ -55,6 +55,14 @@ export interface UniformUpdateOptions {
   readonly quaternionOverride?: Quaternion | readonly [number, number, number, number];
 }
 
+export interface LocalizationTelemetry {
+  readonly snapshot: LocalizationSnapshot | null;
+  readonly channel: FabricChannelState | null;
+  readonly summary: FabricSummary | null;
+  readonly fusion: RotorFusionState | null;
+  readonly prediction: PredictiveRotorState | null;
+}
+
 interface QuaternionLike {
   readonly x?: number;
   readonly y?: number;
@@ -120,6 +128,7 @@ export class GlassUniformController {
   private lastConfidence = 1;
   private lastFusion: RotorFusionState | null = null;
   private lastLocalizationChannel: FabricChannelState | null = null;
+  private lastLocalizationSnapshot: LocalizationSnapshot | null = null;
   private fabricSummary: FabricSummary | null = null;
   private lastPrediction: PredictiveRotorState | null = null;
   private lastStoryResult: StoryGraphUpdateResult | null = null;
@@ -181,6 +190,7 @@ export class GlassUniformController {
       return { snapshot: null, channel: this.lastLocalizationChannel };
     }
     const channel = this.localizationRouter.ingest(snapshot);
+    this.lastLocalizationSnapshot = snapshot;
     this.lastLocalizationChannel = channel;
     this.fabricSummary = this.localizationRouter.summarize();
     return { snapshot, channel };
@@ -340,6 +350,10 @@ export class GlassUniformController {
     return this.lastLocalizationChannel;
   }
 
+  getLastLocalizationSnapshot(): LocalizationSnapshot | null {
+    return this.lastLocalizationSnapshot;
+  }
+
   getFabricSummary(): FabricSummary | null {
     return this.fabricSummary;
   }
@@ -358,6 +372,16 @@ export class GlassUniformController {
 
   getLastPrediction(): PredictiveRotorState | null {
     return this.lastPrediction;
+  }
+
+  getLocalizationTelemetry(): LocalizationTelemetry {
+    return {
+      snapshot: this.lastLocalizationSnapshot,
+      channel: this.lastLocalizationChannel,
+      summary: this.fabricSummary,
+      fusion: this.lastFusion,
+      prediction: this.lastPrediction,
+    };
   }
 
   listStoryActivations(): StoryTriggerActivation[] {

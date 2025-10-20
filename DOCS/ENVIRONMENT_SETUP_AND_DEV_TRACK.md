@@ -113,11 +113,10 @@ This guide consolidates the environment preparation, tooling, and phased develop
 - ✅ Port the hypersphere/hypertetrahedron lattice shader suite to WGSL with the reusable `GlassShaderLibrary`, keeping WebGPU layer pipelines in lockstep with the legacy WebGL preview.
 - ✅ Extend `GlassPipelineFactory` so every layer can request its own geometry/projection WGSL variant, compiling distinct render pipelines that mirror the library selections across preview and WebXR session flows.
 
-### Phase 3 — Unity XR Pipeline (Week 6-10)
-- Create Unity package referencing math core via shared artifacts (e.g., `Packages/com.vib3.quaternion`).
-- Implement compute shader path for rotor preprocessing and late-latched instanced rendering.
-- Integrate Meta Haptics SDK events mapped to rotor plane transitions.
-- Establish automated Quest build using `game-ci/unity-builder` GitHub Actions.
+### Phase 3 — Visualization Engines & Renderer Synchronization ✅
+- Introduced the `attachVisualizationLifecycle` helper so the CanvasManager lifecycle contract stays consistent across faceted, quantum, holographic, and polychora engines (with automatic disposal on teardown).
+- Centralized glass material defaults, cached WebGPU pipeline creation, reused blur bind groups, and aligned the WebGL fallback renderer’s palette with the shared defaults.
+- Extended the preview tooling with Polychora support, a cross-platform `pnpm dev:web` launcher, updated Storybook scenarios, and refreshed docs describing lifecycle presets.
 
 ### Phase 4 — Native Spatial Extensions (Week 10-14)
 - PolySpatial shader compatibility pass; generate MaterialX with simplified math fallback.

@@ -114,3 +114,22 @@ The wearable designer demo showcases this flow by wiring an asynchronous remote 
 - Expand the pack catalog (healthcare, education) with commercialization metadata so KPI snapshots can highlight regulated market coverage.
 - Harden production-grade storage adapters with retry/backoff policies and connect nightly KPI jobs to downstream partner BI pipelines.
 - Extend partner docs with KPI interpretation guidance and sample dashboard widgets fed by the CSV/JSON exports.
+
+## Operational Runbooks
+
+### Nightly KPI Capture & Export
+1. Configure the SDK with `snapshotIntervalMs` (e.g., `86_400_000` for daily captures) and a remote snapshot storage adapter (`createSignedS3CommercializationSnapshotStorage`).
+2. Register a telemetry middleware that injects signing metadata required by the downstream vault (key identifiers, environment labels).
+3. Schedule a cron/CI job that calls `sdk.captureLicenseCommercializationSnapshot({ trigger: 'scheduled' })` immediately before midnight UTC.
+4. After capture, invoke `sdk.exportLicenseCommercializationSnapshots({ format: 'json' })` and upload the payload to the BI landing zone; store export metadata (snapshot count, retention policy) alongside the artifact for auditors.
+
+### Quarterly Commercialization Review
+1. Call `sdk.getLicenseCommercializationKpiReport({ limit: 4 })` to compare the latest quarter against the previous three snapshots.
+2. Generate CSV exports for executive review with `sdk.exportLicenseCommercializationSnapshots({ format: 'csv', includeSummary: true })` and circulate the output to finance/legal stakeholders.
+3. Use `sdk.getLicenseCommercializationSummary()` to refresh the dashboard widgets that highlight default profile adoption, SLA deltas, and regional coverage prior to the review meeting.
+
+### Incident Response (Attestation Failure)
+1. Monitor the telemetry harness for `compliance.license.attestor_error` audit entries via `sdk.getTelemetryAuditTrail()`.
+2. When detected, pull the most recent commercialization snapshot (`sdk.getLatestLicenseCommercializationSnapshot()`) to determine which profiles or packs are impacted.
+3. Trigger a manual snapshot (`sdk.captureLicenseCommercializationSnapshot({ trigger: 'incident-response' })`) so remediation workstreams have a frozen KPI baseline.
+4. File the incident report with attached audit logs and KPI exports, then reset the telemetry metrics with `sdk.resetTelemetryMetrics()` after resolution to monitor the next window cleanly.
