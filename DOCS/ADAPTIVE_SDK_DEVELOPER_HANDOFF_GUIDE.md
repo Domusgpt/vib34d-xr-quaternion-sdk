@@ -23,32 +23,36 @@ This guide consolidates everything a delivery or partner engineering team needs 
 The following steps must be completed before a new team assumes ownership or before distributing a partner preview build:
 
 1. **Environment Readiness**
-   - Run `npm install` and confirm `npm test` passes (Vitest suites).
+   - Run `corepack enable` (if required), `pnpm install`, and then execute `pnpm ci:preflight` followed by `pnpm test` so Node compatibility, generated artifacts, and Vitest suites are validated together.【F:package.json†L57-L72】【F:tools/scripts/preflight.ts†L1-L106】
    - Optional: install Playwright browsers (`npx playwright install`) if e2e smoke specs are required.
    - Verify local HTTP server access (`python3 -m http.server 8080`) renders `wearable-designer.html` with no console errors.
 
-2. **License & Consent Configuration**
+2. **XR Hardware Bring-up**
+   - Validate wearable adapters by running `pnpm test --filter wearableSensorNormalization` so AR visor payloads stay compliant with the `SensorSchemaRegistry` before rolling hardware firmware to partners.【F:tests/wearableSensorNormalization.test.ts†L1-L59】【F:src/ui/adaptive/sensors/SensorSchemaRegistry.js†L424-L548】
+   - Wire preview builds to call `getLocalizationTelemetry()` on the `WebGPUPreviewHarness` and `WebXRGlassSession.ingestLocalizationFrame()` for runtime feeds, ensuring localization drift/confidence dashboards stay in sync during hardware certification runs.【F:src/dev/webgpuPreviewHarness.ts†L301-L318】【F:src/ui/adaptive/renderers/webgpu/WebXRGlassSession.ts†L117-L176】
+
+3. **License & Consent Configuration**
    - Provision `LicenseManager` with initial license payloads (`setLicense`, `validateLicense`) and connect attestation profiles via `registerAttestationProfile` or catalog packs.
    - Configure consent defaults through `createConsentPanel` options and confirm telemetry events are gated until consent toggles are enabled.
 
-3. **Telemetry Providers & Middleware**
+4. **Telemetry Providers & Middleware**
    - Register required providers (`ConsoleTelemetryProvider`, `HttpTelemetryProvider`, `PartnerTelemetryProvider`, `ComplianceVaultTelemetryProvider`).
    - Attach middleware (e.g., `createRequestSigningMiddleware`) and remote storage adapters per deployment environment.
    - Capture audit trails via `getTelemetryAuditTrail()` and remote vault exports.
 
-4. **Adaptive Layout & Projection Integration**
+5. **Adaptive Layout & Projection Integration**
    - Choose default layout strategies/annotations and verify blueprint exports using `buildLayoutBlueprint()`.
    - Hydrate projection scenario catalog entries, validate them through the validator summaries, and simulate key scenarios in the projection composer.
 
-5. **Commercialization Analytics**
+6. **Commercialization Analytics**
    - Configure `LicenseCommercializationReporter` listeners, schedule snapshot captures, and connect remote storage adapters (`createSignedS3SnapshotAdapter`, etc.).
    - Export JSON/CSV snapshots and ensure KPI deltas populate commercialization dashboards in the demo shell.
 
-6. **Security & Compliance**
+7. **Security & Compliance**
    - Apply encryption templates from `REMOTE_STORAGE_ENCRYPTION_TEMPLATES.md` to remote storage adapters.
    - Document retention policies, data minimization settings, and consent audit expectations for each telemetry channel.
 
-7. **Documentation & Support Links**
+8. **Documentation & Support Links**
    - Review README updates, roadmap references, and ensure partner-facing materials include this guide plus SDK boundary documentation.
    - Update `PLANNING/SESSION_LOG.md` with ownership transition details and next steps.
 

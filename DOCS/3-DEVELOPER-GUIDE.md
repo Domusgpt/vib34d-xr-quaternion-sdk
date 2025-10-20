@@ -27,6 +27,28 @@ npx serve -p 8080
 open http://localhost:8080
 ```
 
+> **Preview tip:** `pnpm dev:web` boots the Vite-powered quaternion preview harness. Append query parameters such as `?system=polychora&preset=aurora-cascade&yaw=45&pitch=12&roll=-18` to pre-select a visualization engine, Storybook preset, or initial camera angles.
+
+## 🧭 Phase 3 Visualization Recap
+
+Phase 3 unified our visualization lifecycle, renderer defaults, and tooling surface so partners can exercise every engine without bespoke wiring:
+
+- **Lifecycle helper.** `registerCanvasLifecycle` (also exported for partner documentation as `attachVisualizationLifecycle`) wraps the shared `CanvasManager` registration flow and guarantees each system tears down listeners cleanly. Engines call the helper during construction so focus/blur and resize activity stays synchronized.【F:src/core/registerCanvasLifecycle.js†L1-L21】【F:src/quantum/QuantumEngine.js†L9-L39】
+- **Renderer defaults.** Glass materials, WebGPU/WebGL palette values, and blur resources are now centralized. The pipeline factory caches compiled programs and the blur helper reuses bind groups to eliminate redundant GPU work while keeping fallbacks visually aligned.【F:src/ui/adaptive/renderers/webgpu/GlassPipelineFactory.ts†L1-L86】【F:src/ui/adaptive/renderers/webgpu/LayerBlurHelper.ts†L1-L86】
+- **Preview tooling.** The quaternion preview and Storybook controls expose the Polychora engine, rotor overrides, and cross-platform launch scripts (`pnpm dev:web`, `pnpm storybook`) so designers can validate presets alongside the runtime lifecycle bridge. Both commands now execute a preflight check that confirms Node version requirements and generated localization artifacts before launching the UI.【F:package.json†L57-L72】【F:tools/scripts/preflight.ts†L1-L106】【F:src/dev/quaternionPreview.ts†L1-L180】【F:src/stories/QuaternionPreview.stories.ts†L1-L90】
+
+## 🧾 Phase 4 Commercialization & Telemetry Recap
+
+- **Schema-first telemetry.** The `ProductTelemetryHarness` registers event schemas, enforces sanitization, and streams analytics summaries alongside commercialization KPIs so compliance reviewers have a single interface for consent, schema health, and attestation signals.【F:src/product/ProductTelemetryHarness.js†L639-L741】【F:src/product/ProductTelemetryHarness.js†L468-L534】
+- **Snapshot persistence.** Commercialization snapshots default to redacting license keys, hydrate asynchronously, and expose exports that the SDK surfaces via helpers such as `captureLicenseCommercializationSnapshot()` and `exportLicenseCommercializationSnapshots()` for BI automation.【F:src/product/licensing/storage/CommercializationSnapshotStorageAdapters.js†L1-L142】【F:src/core/AdaptiveSDK.js†L247-L314】
+- **Runbook updates.** The commercialization handbook outlines nightly capture recipes, on-demand reviews, and hydration fallbacks so enterprise teams can operationalize the telemetry stack without reverse-engineering implementation details.【F:DOCS/LICENSE_COMMERCIALIZATION_ANALYTICS.md†L1-L160】
+
+## 🛠 Phase 5 Tooling & Automation
+
+- **Preflight enforcement.** A reusable preflight script now guards `pnpm dev:web`, `pnpm storybook`, and CI entry points, checking Node version compatibility and ensuring generated localization artifacts are in sync before interactive tooling starts.【F:package.json†L57-L72】【F:tools/scripts/preflight.ts†L1-L106】
+- **Deterministic code generation.** The localization code generator exposes reusable helpers so preflight checks and tests can verify artifacts without re-running CLI commands, and `pnpm codegen:localization` reuses the same module to refresh outputs.【F:tools/codegen/localization-quaternions.ts†L1-L106】【F:tools/scripts/runLocalizationCodegen.ts†L1-L26】
+- **End-to-end smoke coverage.** New Vitest suites exercise the SDK bootstrap path and generated artifact validation, providing phase-five smoke assurance across telemetry, sensors, and quaternion registries.【F:tests/sdkSmoke.test.ts†L1-L82】【F:tests/localizationArtifacts.test.ts†L1-L20】
+
 ### Project Structure
 ```
 vib34d-ultimate-viewer/
@@ -143,6 +165,9 @@ const paramManager = new ParameterManager();
 // Core parameters
 const defaultParams = {
     geometry: 0,            // 0-7 geometry types
+    rot4dXY: 0.0,          // -6.28 to 6.28 radians
+    rot4dXZ: 0.0,          // -6.28 to 6.28 radians
+    rot4dYZ: 0.0,          // -6.28 to 6.28 radians
     rot4dXW: 0.0,          // -6.28 to 6.28 radians
     rot4dYW: 0.0,          // -6.28 to 6.28 radians
     rot4dZW: 0.0,          // -6.28 to 6.28 radians

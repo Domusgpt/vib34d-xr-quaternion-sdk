@@ -6,6 +6,7 @@
 import { QuantumHolographicVisualizer } from './QuantumVisualizer.js';
 import { ParameterManager } from '../core/Parameters.js';
 import { GeometryLibrary } from '../geometry/GeometryLibrary.js';
+import { registerCanvasLifecycle } from '../core/registerCanvasLifecycle.js';
 
 export class QuantumEngine {
     constructor() {
@@ -14,6 +15,7 @@ export class QuantumEngine {
         this.visualizers = [];
         this.parameters = new ParameterManager();
         this.isActive = false;
+        this.canvasLifecycleCleanup = null;
         
         // REMOVED: Built-in reactivity - ReactivityManager handles all interactions now
         
@@ -25,6 +27,12 @@ export class QuantumEngine {
         this.parameters.setParameter('morphFactor', 1.0);
         
         this.init();
+
+        this.canvasLifecycleCleanup = registerCanvasLifecycle('quantum', {
+            applyRotor: rotor => this.setRotorState(rotor),
+            onActivate: () => this.setActive(true),
+            onDeactivate: () => this.setActive(false),
+        });
     }
     
     /**
@@ -192,6 +200,32 @@ export class QuantumEngine {
             this.updateParameter(param, params[param]);
         });
     }
+
+    setRotorState(rotor) {
+        if (!rotor) {
+            return;
+        }
+
+        const state = Array.isArray(rotor)
+            ? {
+                xy: rotor[0],
+                xz: rotor[1],
+                yz: rotor[2],
+                xw: rotor[3],
+                yw: rotor[4],
+                zw: rotor[5]
+            }
+            : rotor;
+
+        this.updateParameters({
+            rot4dXY: Number(state.xy ?? state.xY ?? 0) || 0,
+            rot4dXZ: Number(state.xz ?? state.xZ ?? 0) || 0,
+            rot4dYZ: Number(state.yz ?? state.yZ ?? 0) || 0,
+            rot4dXW: Number(state.xw ?? state.xW ?? 0) || 0,
+            rot4dYW: Number(state.yw ?? state.yW ?? 0) || 0,
+            rot4dZW: Number(state.zw ?? state.zW ?? 0) || 0,
+        });
+    }
     
     /**
      * Update mouse interaction
@@ -297,11 +331,15 @@ export class QuantumEngine {
      * Clean up resources
      */
     destroy() {
+        if (this.canvasLifecycleCleanup) {
+            this.canvasLifecycleCleanup();
+            this.canvasLifecycleCleanup = null;
+        }
         // Disconnect from universal reactivity
         if (window.universalReactivity) {
             window.universalReactivity.disconnectSystem('quantum');
         }
-        
+
         this.visualizers.forEach(visualizer => {
             if (visualizer.destroy) {
                 visualizer.destroy();

@@ -1,6 +1,40 @@
 export const PREVIEW_STORAGE_KEY = 'vib3d.quaternionPreview.state';
 export const PREVIEW_STORAGE_VERSION = 1;
 
+export interface PreviewRotorStatePayload {
+  xy: number;
+  xz: number;
+  yz: number;
+  xw: number;
+  yw: number;
+  zw: number;
+}
+
+const coerceFiniteNumber = (value: unknown): number => {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+
+export const DEFAULT_PREVIEW_ROTOR_STATE: PreviewRotorStatePayload = Object.freeze({
+  xy: 0,
+  xz: 0,
+  yz: 0,
+  xw: 0,
+  yw: 0,
+  zw: 0,
+});
+
+export const sanitizePreviewRotorState = (
+  candidate: Partial<PreviewRotorStatePayload> | null | undefined
+): PreviewRotorStatePayload => ({
+  xy: coerceFiniteNumber(candidate?.xy),
+  xz: coerceFiniteNumber(candidate?.xz),
+  yz: coerceFiniteNumber(candidate?.yz),
+  xw: coerceFiniteNumber(candidate?.xw),
+  yw: coerceFiniteNumber(candidate?.yw),
+  zw: coerceFiniteNumber(candidate?.zw),
+});
+
 export interface StorageLike {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
@@ -37,6 +71,7 @@ export interface PreviewStatePayload {
   selectedGeometry: string;
   selectedProjection: string;
   layers: PreviewLayerStatePayload[];
+  rotor: PreviewRotorStatePayload;
 }
 
 export interface PreviewStateStorage {
@@ -79,7 +114,7 @@ const isLayerStatePayload = (value: unknown): value is PreviewLayerStatePayload 
   );
 };
 
-const isPreviewStatePayload = (value: unknown): value is PreviewStatePayload => {
+const hasBasePreviewStateFields = (value: unknown): value is Omit<PreviewStatePayload, 'rotor'> => {
   if (!value || typeof value !== 'object') {
     return false;
   }
@@ -105,10 +140,13 @@ export const parsePreviewState = (raw: string): PreviewStatePayload | null => {
   }
   try {
     const parsed = JSON.parse(raw);
-    if (!isPreviewStatePayload(parsed)) {
+    if (!hasBasePreviewStateFields(parsed)) {
       return null;
     }
-    return parsed;
+    return {
+      ...parsed,
+      rotor: sanitizePreviewRotorState(parsed.rotor),
+    };
   } catch (error) {
     console.warn('[QuaternionPreview] Failed to parse preview state', error);
     return null;
@@ -118,7 +156,15 @@ export const parsePreviewState = (raw: string): PreviewStatePayload | null => {
 export const stringifyPreviewState = (
   state: PreviewStatePayload,
   pretty: boolean = false
-) => JSON.stringify(state, null, pretty ? 2 : undefined);
+) =>
+  JSON.stringify(
+    {
+      ...state,
+      rotor: sanitizePreviewRotorState(state.rotor),
+    },
+    null,
+    pretty ? 2 : undefined
+  );
 
 export const createPreviewStateStorage = (
   storage: StorageLike | null | undefined =

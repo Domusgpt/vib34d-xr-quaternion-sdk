@@ -1,4 +1,5 @@
-import GlassUniformController from './GlassUniformController.ts';
+import GlassUniformController, { type LocalizationTelemetry } from './GlassUniformController.ts';
+import type { LocalizationFrameInput } from '../localization/LocalizationBridge.ts';
 import type { AudioBands, VisualParameterVector, XRFrameLike, XRViewLike, XRViewerPoseLike } from './WebXRQuaternionBridge.ts';
 import { MultiLayerGlassComposer } from './MultiLayerGlassComposer.ts';
 import {
@@ -83,6 +84,7 @@ interface ViewTargets {
   finalViews: unknown[];
   compositeBindGroup: unknown;
   blurHelper: LayerBlurHelper | null;
+  needsCompositeRefresh: boolean;
 }
 
 export class WebXRGlassSession {
@@ -115,9 +117,12 @@ export class WebXRGlassSession {
   private lastFrameSeconds: number | null = null;
   private fpsAccumulator = 0;
   private fpsFrames = 0;
+  private localizationTelemetry: LocalizationTelemetry | null = null;
 
   private readonly viewTargets = new Map<number, ViewTargets>();
   private readonly hasBlurLayers: boolean;
+  private globalBindGroup: unknown | null = null;
+  private globalBindGroupResource: unknown | null = null;
 
   constructor(options: WebXRGlassSessionOptions) {
     if (!options?.device) {
@@ -145,6 +150,9 @@ export class WebXRGlassSession {
     this.audioOverride = options.audioOverride;
     this.visualOverride = options.visualOverride;
     this.hasBlurLayers = this.composer.layers.some(layer => (layer.blurRadius ?? 0) > 0);
+    this.localizationTelemetry = typeof this.controller.getLocalizationTelemetry === 'function'
+      ? this.controller.getLocalizationTelemetry()
+      : null;
   }
 
   get runningSession(): XRSessionLike | null {
@@ -158,6 +166,25 @@ export class WebXRGlassSession {
         ? this.controller.listLocalizationRisks()
         : []),
     ];
+  }
+
+  ingestLocalizationFrame(frame: LocalizationFrameInput): void {
+    const result = this.controller.ingestLocalizationFrame(frame);
+    if (typeof this.controller.getLocalizationTelemetry === 'function') {
+      this.localizationTelemetry = this.controller.getLocalizationTelemetry();
+    } else {
+      this.localizationTelemetry = {
+        snapshot: result.snapshot,
+        channel: result.channel,
+        summary: null,
+        fusion: null,
+        prediction: null,
+      };
+    }
+  }
+
+  getLocalizationTelemetry(): LocalizationTelemetry | null {
+    return this.localizationTelemetry;
   }
 
   async start(): Promise<void> {
@@ -206,6 +233,7 @@ export class WebXRGlassSession {
 
     this.running = true;
     this.lastFrameSeconds = null;
+    this.refreshGlobalBindGroup();
     this.scheduleFrame();
   }
 
@@ -214,6 +242,8 @@ export class WebXRGlassSession {
       return;
     }
     this.running = false;
+    this.globalBindGroup = null;
+    this.globalBindGroupResource = null;
 
     if (this.session) {
       if (this.rafHandle != null && typeof this.session.cancelAnimationFrame === 'function') {
@@ -260,6 +290,8 @@ export class WebXRGlassSession {
       return;
     }
 
+    this.refreshGlobalBindGroup();
+
     const seconds = timestamp * 0.001;
     const delta = this.lastFrameSeconds == null ? 0 : seconds - this.lastFrameSeconds;
     this.lastFrameSeconds = seconds;
@@ -272,6 +304,9 @@ export class WebXRGlassSession {
         audioOverride: this.audioOverride,
         visualOverride: this.visualOverride,
       });
+      if (typeof this.controller.getLocalizationTelemetry === 'function') {
+        this.localizationTelemetry = this.controller.getLocalizationTelemetry();
+      }
     } catch (error) {
       this.logger?.warn?.('[WebXRGlassSession] Failed to update uniforms', error);
       this.scheduleFrame();
@@ -293,11 +328,12 @@ export class WebXRGlassSession {
       return;
     }
 
+    const globalBindGroup = this.globalBindGroup;
+    if (!globalBindGroup) {
+      return;
+    }
+
     const encoder = this.device.createCommandEncoder({ label: 'GlassXRFrame' });
-    const globalBindGroup = this.device.createBindGroup({
-      layout: this.pipelines.uniformBindGroupLayout,
-      entries: [this.composer.getUniformBindGroupEntry(0)],
-    });
 
     pose.views.forEach((view, viewIndex) => {
       const subImage = this.binding!.getViewSubImage(this.projectionLayer!, view);
@@ -332,16 +368,22 @@ export class WebXRGlassSession {
           width,
           height
         ) ?? targets.views[layerIndex];
-        targets.finalViews[layerIndex] = blurredView;
+        if (targets.finalViews[layerIndex] !== blurredView) {
+          targets.finalViews[layerIndex] = blurredView;
+          targets.needsCompositeRefresh = true;
+        }
       });
 
-      targets.compositeBindGroup = this.device.createBindGroup({
-        layout: this.pipelines!.compositeBindGroupLayout,
-        entries: [
-          { binding: 0, resource: this.pipelines!.sampler },
-          ...targets.finalViews.map((view, index) => ({ binding: index + 1, resource: view })),
-        ],
-      });
+      if (!targets.compositeBindGroup || targets.needsCompositeRefresh) {
+        targets.compositeBindGroup = this.device.createBindGroup({
+          layout: this.pipelines!.compositeBindGroupLayout,
+          entries: [
+            { binding: 0, resource: this.pipelines!.sampler },
+            ...targets.finalViews.map((view, index) => ({ binding: index + 1, resource: view })),
+          ],
+        });
+        targets.needsCompositeRefresh = false;
+      }
 
       const colorView = subImage.colorTexture.createView(subImage.getViewDescriptor?.());
       const compositePass = encoder.beginRenderPass({
@@ -410,15 +452,7 @@ export class WebXRGlassSession {
     blurHelper?.resize(width, height);
     const finalViews = views.map((view, index) => blurHelper?.getCompositeView(index, view) ?? view);
 
-    const compositeBindGroup = this.device.createBindGroup({
-      layout: this.pipelines!.compositeBindGroupLayout,
-      entries: [
-        { binding: 0, resource: this.pipelines!.sampler },
-        ...finalViews.map((view, index) => ({ binding: index + 1, resource: view })),
-      ],
-    });
-
-    const entry: ViewTargets = { width, height, textures, views, finalViews, compositeBindGroup, blurHelper };
+    const entry: ViewTargets = { width, height, textures, views, finalViews, compositeBindGroup: null, blurHelper, needsCompositeRefresh: true };
     this.viewTargets.set(viewIndex, entry);
     return entry;
   }
@@ -432,6 +466,27 @@ export class WebXRGlassSession {
       }
     });
     entry.blurHelper?.dispose();
+    entry.compositeBindGroup = null;
+  }
+
+  private refreshGlobalBindGroup(): void {
+    if (!this.pipelines) {
+      this.globalBindGroup = null;
+      this.globalBindGroupResource = null;
+      return;
+    }
+
+    const entry = this.composer.getUniformBindGroupEntry(0);
+    const resource = (entry?.resource as { buffer?: unknown })?.buffer ?? null;
+    if (this.globalBindGroup && this.globalBindGroupResource === resource) {
+      return;
+    }
+
+    this.globalBindGroupResource = resource;
+    this.globalBindGroup = this.device.createBindGroup({
+      layout: this.pipelines.uniformBindGroupLayout,
+      entries: [entry],
+    });
   }
 
   private createDefaultBinding(session: XRSessionLike): XRGPUBindingLike | null {

@@ -59,14 +59,16 @@
     "node": ">=18.19.0"
   },
   "scripts": {
-    "dev:web": "vite --open",
+    "dev:web": "tsx tools/scripts/preflight.ts dev:web && vite --open",
     "build:web": "vite build",
     "lint": "eslint \"src/**/*.{js,ts}\"",
     "test": "vitest run",
     "bench": "vitest bench",
     "analyze:bundle": "vite build --mode analyze",
-    "codegen:localization": "tsx tools/codegen/localization-quaternions.ts",
-    "storybook": "storybook dev -p 6006",
+    "ci:preflight": "tsx tools/scripts/preflight.ts ci",
+    "codegen:localization": "tsx tools/scripts/runLocalizationCodegen.ts",
+    "codegen:localization:check": "tsx tools/scripts/preflight.ts codegen:localization",
+    "storybook": "tsx tools/scripts/preflight.ts storybook && storybook dev -p 6006",
     "build:storybook": "storybook build"
   },
   "packageManager": "pnpm@9.4.0",
