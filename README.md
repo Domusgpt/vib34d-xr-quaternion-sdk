@@ -155,6 +155,24 @@ This SDK is designed for integration into XR applications that need:
 
 See `DOCS/ADAPTIVE_SDK_DEVELOPER_HANDOFF_GUIDE.md` for complete integration instructions.
 
+## 🛠️ Environment & Development Track
+
+For a step-by-step environment checklist, recommended XR tooling, and the phased
+refactoring plan that centralizes quaternion handling across the faceted,
+quantum, and holographic systems, review
+`DOCS/ENVIRONMENT_AND_DEVELOPMENT_TRACK.md`.
+
+### Quickstart Setup
+
+```bash
+nvm use
+npm run setup
+```
+
+The setup script enforces the Node.js version declared in `.nvmrc`, hydrates npm
+dependencies when needed, and prints the immediate follow-up steps from the
+development track guide.
+
 ## 🌟 Key Technologies
 
 - **4D Projection Mathematics**: True 4D geometric processing
