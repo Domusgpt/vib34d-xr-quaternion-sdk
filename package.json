@@ -3,9 +3,16 @@
   "version": "1.0.0",
   "description": "4D Geometric Processing with XR Quaternion Integration - Advanced quaternion mathematics and spatial computing for OpenXR/WebXR",
   "type": "module",
-  "main": "src/core/AdaptiveSDK.js",
+  "main": "dist/adaptive-sdk.cjs",
+  "module": "dist/adaptive-sdk.esm.js",
+  "browser": "dist/adaptive-sdk.umd.js",
+  "types": "./types/adaptive-sdk.d.ts",
   "exports": {
-    ".": "./src/core/AdaptiveSDK.js",
+    ".": {
+      "import": "./dist/adaptive-sdk.esm.js",
+      "require": "./dist/adaptive-sdk.cjs",
+      "types": "./types/adaptive-sdk.d.ts"
+    },
     "./quaternion": "./src/ui/adaptive/renderers/ShaderQuaternionSynchronizer.js",
     "./sensors": "./src/ui/adaptive/SensoryInputBridge.js",
     "./polychora": "./src/core/PolychoraSystem.js",
@@ -39,11 +46,44 @@
     "node": ">=16.0.0"
   },
   "files": [
+    "dist/",
     "src/",
     "types/",
     "DOCS/",
     "wearable-designer.html",
     "README.md"
   ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:smoke": "playwright test --grep @smoke",
+    "build": "rollup -c",
+    "build:watch": "rollup -c -w",
+    "dev": "vite",
+    "benchmark": "node tests/benchmarks/run-benchmarks.js",
+    "prepublishOnly": "npm test && npm run build",
+    "publish:beta": "npm publish --tag beta",
+    "publish:latest": "npm publish",
+    "lint": "eslint src tests",
+    "format": "prettier --write \"src/**/*.js\" \"tests/**/*.js\"",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "@rollup/plugin-commonjs": "^25.0.7",
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-terser": "^0.4.4",
+    "@vitest/coverage-v8": "^1.0.4",
+    "eslint": "^8.55.0",
+    "jsdom": "^23.0.1",
+    "prettier": "^3.1.1",
+    "rollup": "^4.9.1",
+    "vite": "^5.0.10",
+    "vitepress": "^1.0.0",
+    "vitest": "^1.0.4"
+  },
   "types": "./types/adaptive-sdk.d.ts"
 }

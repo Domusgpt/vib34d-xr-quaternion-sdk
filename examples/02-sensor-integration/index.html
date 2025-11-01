@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AR Sensor Integration - VIB34D SDK</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 900px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #0a0a0a;
+      color: #e0e0e0;
+    }
+    h1 { color: #ff1493; border-bottom: 2px solid #ff1493; padding-bottom: 10px; }
+    .sensor-panel {
+      background: #1a1a1a;
+      padding: 20px;
+      border-radius: 8px;
+      margin: 20px 0;
+    }
+    .sensor-data {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-top: 15px;
+    }
+    .data-card {
+      background: #2a2a2a;
+      padding: 15px;
+      border-radius: 6px;
+      border-left: 4px solid #ff1493;
+    }
+    .data-label {
+      font-size: 12px;
+      color: #999;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .data-value {
+      font-size: 20px;
+      color: #00ff88;
+      font-family: 'Courier New', monospace;
+      margin-top: 5px;
+    }
+    button {
+      background: #ff1493;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      font-size: 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin: 10px 10px 10px 0;
+    }
+    button:hover { background: #ff69b4; }
+    button:disabled {
+      background: #666;
+      cursor: not-allowed;
+    }
+    .info {
+      background: #2a2a2a;
+      padding: 15px;
+      border-left: 4px solid #ff1493;
+      margin: 20px 0;
+    }
+    .status {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: bold;
+    }
+    .status.connected { background: #00ff88; color: #000; }
+    .status.disconnected { background: #666; color: #fff; }
+  </style>
+</head>
+<body>
+  <h1>📡 AR Sensor Integration</h1>
+
+  <div class="info">
+    <strong>Example 2:</strong> Demonstrates XR sensor normalization and device orientation tracking
+    using the VIB34D Sensory Input Bridge. This example simulates AR visor sensors.
+  </div>
+
+  <div class="sensor-panel">
+    <h3>Device Status: <span class="status disconnected" id="status">Disconnected</span></h3>
+
+    <button onclick="connectSensor()" id="connectBtn">Connect AR Visor</button>
+    <button onclick="disconnectSensor()" id="disconnectBtn" disabled>Disconnect</button>
+    <button onclick="simulateMotion()" id="motionBtn" disabled>Simulate Motion</button>
+
+    <div class="sensor-data">
+      <div class="data-card">
+        <div class="data-label">Position X</div>
+        <div class="data-value" id="posX">0.0000</div>
+      </div>
+      <div class="data-card">
+        <div class="data-label">Position Y</div>
+        <div class="data-value" id="posY">0.0000</div>
+      </div>
+      <div class="data-card">
+        <div class="data-label">Position Z</div>
+        <div class="data-value" id="posZ">0.0000</div>
+      </div>
+      <div class="data-card">
+        <div class="data-label">Orientation (Quat W)</div>
+        <div class="data-value" id="quatW">1.0000</div>
+      </div>
+      <div class="data-card">
+        <div class="data-label">Orientation (Quat X)</div>
+        <div class="data-value" id="quatX">0.0000</div>
+      </div>
+      <div class="data-card">
+        <div class="data-label">Orientation (Quat Y)</div>
+        <div class="data-value" id="quatY">0.0000</div>
+      </div>
+      <div class="data-card">
+        <div class="data-label">Orientation (Quat Z)</div>
+        <div class="data-value" id="quatZ">0.0000</div>
+      </div>
+      <div class="data-card">
+        <div class="data-label">Confidence</div>
+        <div class="data-value" id="confidence">0.00</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sensor-panel">
+    <h3>Event Log</h3>
+    <div style="background: #0a0a0a; padding: 15px; border-radius: 6px; max-height: 200px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 12px;">
+      <div id="eventLog">Ready to connect...</div>
+    </div>
+  </div>
+
+  <script type="module">
+    // Simulated AR Visor Sensor
+    class ARVisorSensor {
+      constructor() {
+        this.connected = false;
+        this.position = { x: 0, y: 0, z: 0 };
+        this.orientation = { x: 0, y: 0, z: 0, w: 1 };
+        this.confidence = 0;
+        this.subscribers = new Set();
+      }
+
+      connect() {
+        this.connected = true;
+        this.confidence = 0.95;
+        this.notify({ type: 'connected', timestamp: Date.now() });
+        return Promise.resolve();
+      }
+
+      disconnect() {
+        this.connected = false;
+        this.confidence = 0;
+        this.notify({ type: 'disconnected', timestamp: Date.now() });
+        return Promise.resolve();
+      }
+
+      subscribe(callback) {
+        this.subscribers.add(callback);
+        return () => this.subscribers.delete(callback);
+      }
+
+      notify(data) {
+        this.subscribers.forEach(cb => cb(data));
+      }
+
+      updatePose(position, orientation) {
+        this.position = position;
+        this.orientation = orientation;
+
+        // Normalize quaternion
+        const mag = Math.sqrt(
+          orientation.x ** 2 + orientation.y ** 2 +
+          orientation.z ** 2 + orientation.w ** 2
+        );
+
+        this.orientation = {
+          x: orientation.x / mag,
+          y: orientation.y / mag,
+          z: orientation.z / mag,
+          w: orientation.w / mag,
+        };
+
+        this.notify({
+          type: 'pose-update',
+          position: this.position,
+          orientation: this.orientation,
+          confidence: this.confidence,
+          timestamp: Date.now(),
+        });
+      }
+    }
+
+    // Application state
+    let sensor = new ARVisorSensor();
+    let animationFrame = null;
+
+    function updateUI(data) {
+      if (data.type === 'pose-update') {
+        document.getElementById('posX').textContent = data.position.x.toFixed(4);
+        document.getElementById('posY').textContent = data.position.y.toFixed(4);
+        document.getElementById('posZ').textContent = data.position.z.toFixed(4);
+        document.getElementById('quatW').textContent = data.orientation.w.toFixed(4);
+        document.getElementById('quatX').textContent = data.orientation.x.toFixed(4);
+        document.getElementById('quatY').textContent = data.orientation.y.toFixed(4);
+        document.getElementById('quatZ').textContent = data.orientation.z.toFixed(4);
+        document.getElementById('confidence').textContent = (data.confidence * 100).toFixed(0) + '%';
+      }
+    }
+
+    function logEvent(message) {
+      const log = document.getElementById('eventLog');
+      const timestamp = new Date().toLocaleTimeString();
+      log.innerHTML = `[${timestamp}] ${message}\n` + log.innerHTML;
+    }
+
+    window.connectSensor = async function() {
+      await sensor.connect();
+      document.getElementById('status').textContent = 'Connected';
+      document.getElementById('status').className = 'status connected';
+      document.getElementById('connectBtn').disabled = true;
+      document.getElementById('disconnectBtn').disabled = false;
+      document.getElementById('motionBtn').disabled = false;
+
+      // Subscribe to sensor updates
+      sensor.subscribe(updateUI);
+
+      logEvent('✓ AR Visor connected successfully');
+      logEvent('→ Sensor initialized with confidence: 95%');
+    };
+
+    window.disconnectSensor = function() {
+      if (animationFrame) {
+        cancelAnimationFrame(animationFrame);
+        animationFrame = null;
+      }
+
+      sensor.disconnect();
+      document.getElementById('status').textContent = 'Disconnected';
+      document.getElementById('status').className = 'status disconnected';
+      document.getElementById('connectBtn').disabled = false;
+      document.getElementById('disconnectBtn').disabled = true;
+      document.getElementById('motionBtn').disabled = true;
+
+      logEvent('✗ AR Visor disconnected');
+    };
+
+    window.simulateMotion = function() {
+      let time = 0;
+
+      function animate() {
+        time += 0.02;
+
+        // Simulate head movement
+        const position = {
+          x: Math.sin(time) * 0.5,
+          y: Math.sin(time * 0.5) * 0.3,
+          z: Math.cos(time) * 0.5,
+        };
+
+        // Simulate head rotation (quaternion)
+        const angle = time * 0.5;
+        const axis = { x: 0, y: 1, z: 0 }; // Rotation around Y-axis
+        const halfAngle = angle / 2;
+        const s = Math.sin(halfAngle);
+
+        const orientation = {
+          x: axis.x * s,
+          y: axis.y * s,
+          z: axis.z * s,
+          w: Math.cos(halfAngle),
+        };
+
+        sensor.updatePose(position, orientation);
+
+        animationFrame = requestAnimationFrame(animate);
+      }
+
+      if (!animationFrame) {
+        logEvent('→ Started motion simulation');
+        animate();
+      }
+    };
+  </script>
+
+  <div class="info" style="margin-top: 40px;">
+    <strong>Try This:</strong>
+    <ul>
+      <li>Connect the AR Visor sensor to see it initialize</li>
+      <li>Click "Simulate Motion" to see real-time sensor data updates</li>
+      <li>Notice how quaternions stay normalized (magnitude = 1)</li>
+      <li>Observe the confidence value indicating sensor reliability</li>
+    </ul>
+
+    <strong>Next Steps:</strong>
+    <ul>
+      <li>See <code>03-4d-visualization</code> to render 4D polytopes with sensor data</li>
+      <li>Check <code>src/ui/adaptive/sensors/ARVisorWearableAdapter.js</code> for real implementation</li>
+    </ul>
+  </div>
+</body>
+</html>

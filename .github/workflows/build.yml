@@ -1,0 +1,92 @@
+name: Build & Verify
+
+on:
+  push:
+    branches: [main, develop, 'claude/**']
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build SDK
+        run: npm run build
+
+      - name: Verify build artifacts
+        run: |
+          test -f dist/adaptive-sdk.esm.js || exit 1
+          test -f dist/adaptive-sdk.cjs || exit 1
+          test -f dist/adaptive-sdk.umd.js || exit 1
+          test -f dist/adaptive-sdk.umd.min.js || exit 1
+          echo "✓ All build artifacts present"
+
+      - name: Check bundle sizes
+        run: |
+          echo "Build Size Report:"
+          ls -lh dist/*.js
+
+          # Check if minified bundle is reasonable size (< 1MB)
+          SIZE=$(stat -f%z dist/adaptive-sdk.umd.min.js 2>/dev/null || stat -c%s dist/adaptive-sdk.umd.min.js)
+          echo "Minified bundle size: ${SIZE} bytes"
+
+          if [ $SIZE -gt 1048576 ]; then
+            echo "⚠️  Warning: Bundle size exceeds 1MB"
+          else
+            echo "✓ Bundle size is acceptable"
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: dist-files
+          path: dist/
+          retention-days: 7
+
+  validate-package:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build SDK
+        run: npm run build
+
+      - name: Pack package
+        run: npm pack
+
+      - name: Validate package contents
+        run: |
+          tar -tzf vib34d-xr-quaternion-sdk-*.tgz | grep -E '(dist/|src/|types/|DOCS/)' || exit 1
+          echo "✓ Package contains required files"
+
+      - name: Upload package
+        uses: actions/upload-artifact@v3
+        with:
+          name: npm-package
+          path: vib34d-xr-quaternion-sdk-*.tgz
+          retention-days: 7
