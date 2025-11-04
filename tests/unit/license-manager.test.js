@@ -288,7 +288,8 @@ describe('LicenseManager', () => {
         pricing.studio * licenses.studio +
         pricing.indie * licenses.indie;
 
-      expect(totalRevenue).toBe(27430);
+      // 999 * 10 + 299 * 50 + 49 * 60 = 9990 + 14950 + 2940 = 27880
+      expect(totalRevenue).toBe(27880);
     });
   });
 });

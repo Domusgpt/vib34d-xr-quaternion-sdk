@@ -53,7 +53,8 @@ describe('SensoryInputBridge', () => {
         (sensor1.value * sensor1.confidence +
          sensor2.value * sensor2.confidence) / totalConfidence;
 
-      expect(weightedValue).toBeCloseTo(13.33, 1);
+      // (10 * 0.9 + 20 * 0.6) / 1.5 = (9 + 12) / 1.5 = 14
+      expect(weightedValue).toBe(14);
     });
   });
 

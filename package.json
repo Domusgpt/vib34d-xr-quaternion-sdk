@@ -84,6 +84,5 @@
     "vite": "^5.0.10",
     "vitepress": "^1.0.0",
     "vitest": "^1.0.4"
-  },
-  "types": "./types/adaptive-sdk.d.ts"
+  }
 }
