@@ -89,7 +89,17 @@ export class ExportSystem {
     const handler = this.formats.get(format);
 
     if (!handler) {
-      throw new Error(`Export format "${format}" not supported. Available: ${this.getAvailableFormats().join(', ')}`);
+      const error = new Error(`Export format "${format}" not supported. Available: ${this.getAvailableFormats().join(', ')}`);
+
+      // Add failed export to history
+      this.addToHistory({
+        format,
+        timestamp: Date.now(),
+        error: error.message,
+        success: false
+      });
+
+      throw error;
     }
 
     try {

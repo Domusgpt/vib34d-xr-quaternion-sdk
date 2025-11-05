@@ -43,7 +43,11 @@ export class ParameterManager {
             hue: { min: 0, max: 360, step: 1, type: 'int' },
             intensity: { min: 0, max: 1, step: 0.01, type: 'float' },
             saturation: { min: 0, max: 1, step: 0.01, type: 'float' },
-            geometry: { min: 0, max: 7, step: 1, type: 'int' }
+            geometry: { min: 0, max: 7, step: 1, type: 'int' },
+            // Additional parameters from variations
+            rotationSpeed: { min: 0, max: 2, step: 0.01, type: 'float' },
+            complexity: { min: 0, max: 1, step: 0.01, type: 'float' },
+            colorIntensity: { min: 0, max: 1, step: 0.01, type: 'float' }
         };
         
         // Default parameter backup for reset
@@ -63,21 +67,22 @@ export class ParameterManager {
     setParameter(name, value) {
         if (this.parameterDefs[name]) {
             const def = this.parameterDefs[name];
-            
+
             // Clamp value to valid range
             value = Math.max(def.min, Math.min(def.max, value));
-            
+
             // Apply type conversion
             if (def.type === 'int') {
                 value = Math.round(value);
             }
-            
+
             this.params[name] = value;
             return true;
         }
-        
-        console.warn(`Unknown parameter: ${name}`);
-        return false;
+
+        // Allow setting dynamic parameters without validation
+        this.params[name] = value;
+        return true;
     }
     
     /**

@@ -12,6 +12,7 @@ export class VIB34DIntegratedEngine {
     this.systems = new Map();
     this.visualizers = new Map();
     this.initialized = false;
+    this.running = false;
 
     // Initialize parameter manager
     this.parameterManager = new ParameterManager();
@@ -55,6 +56,14 @@ export class VIB34DIntegratedEngine {
   }
 
   /**
+   * Unregister a visualizer
+   */
+  unregisterVisualizer(name) {
+    this.visualizers.delete(name);
+    return this;
+  }
+
+  /**
    * Get a visual system (alias for getVisualizer for compatibility)
    */
   getVisualSystem(name) {
@@ -71,6 +80,33 @@ export class VIB34DIntegratedEngine {
 
     this.initialized = true;
     this.emit('initialized');
+  }
+
+  /**
+   * Parameter management shortcuts
+   */
+  getParameter(name) {
+    return this.parameterManager.getParameter(name);
+  }
+
+  setParameter(name, value) {
+    this.parameterManager.setParameter(name, value);
+    return this;
+  }
+
+  getAllParameters() {
+    return this.parameterManager.getAllParameters();
+  }
+
+  /**
+   * Variation shortcuts
+   */
+  getVariationName() {
+    return this.variationManager.getVariationName(this.currentVariation);
+  }
+
+  getVariationPreset(index) {
+    return this.variationManager.getVariationPreset(index);
   }
 
   /**
@@ -112,8 +148,39 @@ export class VIB34DIntegratedEngine {
    * Update the engine (called per frame)
    */
   update(deltaTime) {
+    if (!this.running) {
+      return;
+    }
     // Override in subclass for custom update logic
     this.updateVisualizers();
+  }
+
+  /**
+   * Start the engine
+   */
+  start() {
+    this.running = true;
+    this.emit('start');
+    return this;
+  }
+
+  /**
+   * Stop the engine
+   */
+  stop() {
+    this.running = false;
+    this.emit('stop');
+    return this;
+  }
+
+  /**
+   * Reset the engine to initial state
+   */
+  reset() {
+    this.currentVariation = 0;
+    this.setVariation(0);
+    this.emit('reset');
+    return this;
   }
 
   /**
@@ -125,6 +192,13 @@ export class VIB34DIntegratedEngine {
     }
     this.listeners.get(event).add(callback);
     return () => this.listeners.get(event).delete(callback);
+  }
+
+  off(event, callback) {
+    if (this.listeners.has(event)) {
+      this.listeners.get(event).delete(callback);
+    }
+    return this;
   }
 
   emit(event, data) {
@@ -148,7 +222,7 @@ export class VIB34DIntegratedEngine {
  * Variation Manager
  * Manages variation presets and names
  */
-class VariationManager {
+export class VariationManager {
   constructor() {
     // Default variation names
     this.variationNames = {
@@ -167,18 +241,27 @@ class VariationManager {
     // Variation presets (parameter configurations)
     this.variationPresets = {
       0: { // Classic
+        rotationSpeed: 0.5,
+        complexity: 0.5,
+        colorIntensity: 0.8,
         intensity: 0.5,
         speed: 1.0,
         chaos: 0.2,
         saturation: 0.8
       },
       1: { // Ethereal
+        rotationSpeed: 0.3,
+        complexity: 0.3,
+        colorIntensity: 0.6,
         intensity: 0.3,
         speed: 0.5,
         chaos: 0.1,
         saturation: 0.6
       },
       2: { // Geometric
+        rotationSpeed: 0.6,
+        complexity: 0.7,
+        colorIntensity: 0.9,
         intensity: 0.7,
         speed: 0.8,
         chaos: 0.05,
@@ -186,6 +269,9 @@ class VariationManager {
         morphFactor: 0.5
       },
       3: { // Organic
+        rotationSpeed: 0.7,
+        complexity: 0.8,
+        colorIntensity: 0.7,
         intensity: 0.6,
         speed: 1.2,
         chaos: 0.4,
@@ -193,12 +279,18 @@ class VariationManager {
         morphFactor: 1.5
       },
       4: { // Crystalline
+        rotationSpeed: 0.4,
+        complexity: 0.85,
+        colorIntensity: 1.0,
         intensity: 0.8,
         speed: 0.6,
         chaos: 0.1,
         saturation: 1.0
       },
       5: { // Fractal
+        rotationSpeed: 0.8,
+        complexity: 0.9,
+        colorIntensity: 0.8,
         intensity: 0.7,
         speed: 1.5,
         chaos: 0.6,
@@ -206,6 +298,9 @@ class VariationManager {
         morphFactor: 1.8
       },
       6: { // Holographic
+        rotationSpeed: 0.6,
+        complexity: 0.75,
+        colorIntensity: 0.9,
         intensity: 0.9,
         speed: 1.0,
         chaos: 0.3,
@@ -213,6 +308,9 @@ class VariationManager {
         hue: 280
       },
       7: { // Quantum
+        rotationSpeed: 0.9,
+        complexity: 0.95,
+        colorIntensity: 0.7,
         intensity: 0.6,
         speed: 2.0,
         chaos: 0.8,
@@ -220,12 +318,18 @@ class VariationManager {
         dimension: 4.0
       },
       8: { // Minimal
+        rotationSpeed: 0.2,
+        complexity: 0.2,
+        colorIntensity: 0.4,
         intensity: 0.2,
         speed: 0.3,
         chaos: 0.05,
         saturation: 0.4
       },
       9: { // Maximal
+        rotationSpeed: 1.0,
+        complexity: 1.0,
+        colorIntensity: 1.0,
         intensity: 1.0,
         speed: 2.5,
         chaos: 0.9,
@@ -260,9 +364,28 @@ class VariationManager {
   }
 
   /**
-   * Get all variation names
+   * Get variation index by name
+   */
+  getVariationIndex(name) {
+    for (const [index, varName] of Object.entries(this.variationNames)) {
+      if (varName === name) {
+        return parseInt(index);
+      }
+    }
+    return -1;
+  }
+
+  /**
+   * Get the number of variations
+   */
+  getVariationCount() {
+    return Object.keys(this.variationNames).length;
+  }
+
+  /**
+   * Get all variation names as an array
    */
   getAllVariationNames() {
-    return { ...this.variationNames };
+    return Object.values(this.variationNames);
   }
 }
