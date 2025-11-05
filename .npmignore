@@ -1,0 +1,47 @@
+# Development files
+tests/
+examples/
+PLANNING/
+.github/
+.vscode/
+.idea/
+
+# Build artifacts
+node_modules/
+*.log
+*.tgz
+.DS_Store
+coverage/
+
+# Git files
+.git/
+.gitignore
+.gitattributes
+
+# Config files
+.eslintrc*
+.prettierrc*
+vitest.config.js
+rollup.config.js
+playwright.config.js
+vite.config.js
+
+# CI/CD
+.github/
+.travis.yml
+.circleci/
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+*~
+
+# Keep these
+!dist/
+!src/
+!types/
+!DOCS/
+!README.md
+!LICENSE
+!wearable-designer.html

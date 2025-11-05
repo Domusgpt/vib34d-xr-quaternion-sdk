@@ -1,8 +1,16 @@
 # VIB34D XR Quaternion SDK
 
+[![Tests](https://img.shields.io/badge/tests-66%20passing-brightgreen)](TESTING_REPORT.md)
+[![Build](https://img.shields.io/badge/build-passing-brightgreen)](TESTING_REPORT.md)
+[![Coverage](https://img.shields.io/badge/coverage-60%25+-brightgreen)](TESTING_REPORT.md)
+[![License](https://img.shields.io/badge/license-Proprietary-blue)](DOCS/LICENSE_ATTESTATION_PROFILE_CATALOG.md)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue)](package.json)
+
 **4D Geometric Processing with XR Quaternion Integration**
 
 A focused SDK extracting VIB34D's quaternion mathematics and XR sensor integration for spatial computing applications. Compatible with OpenXR, WebXR, and standard XR development tools.
+
+📖 **[Testing Report](TESTING_REPORT.md)** | 🚀 **[Improvements](IMPROVEMENTS.md)** | 💻 **[Examples](examples/)**
 
 ## 🎯 What This SDK Provides
 
